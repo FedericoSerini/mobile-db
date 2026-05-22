@@ -1,6 +1,7 @@
 package crdt
 
 import (
+	"math"
 	"sync"
 	"time"
 
@@ -17,13 +18,30 @@ func NewClock(deviceID string) *Clock {
 	return &Clock{deviceID: deviceID}
 }
 
+// advanceLogicalWall increments *logical and returns wallTime unchanged.
+// If *logical is already at MaxUint32, resets it to 0 and returns wallTime+1.
+// The returned value must replace the wall time to preserve total order.
+func advanceLogicalWall(wallTime int64, logical *uint32) int64 {
+	if *logical == math.MaxUint32 {
+		*logical = 0
+		return wallTime + 1
+	}
+	*logical++
+	return wallTime
+}
+
 // Tick returns a new HLC guaranteed strictly greater than all previous Ticks.
 func (c *Clock) Tick() core.HLC {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	wall := time.Now().UnixNano()
 	if wall <= c.last.WallTime {
-		c.last.Logical++
+		if c.last.Logical == math.MaxUint32 {
+			c.last.WallTime++
+			c.last.Logical = 0
+		} else {
+			c.last.Logical++
+		}
 	} else {
 		c.last.WallTime = wall
 		c.last.Logical = 0
@@ -40,11 +58,13 @@ func (c *Clock) Receive(remote core.HLC) core.HLC {
 	maxWall := max3(wall, c.last.WallTime, remote.WallTime)
 	switch {
 	case maxWall == c.last.WallTime && maxWall == remote.WallTime:
-		c.last.Logical = max2u(c.last.Logical, remote.Logical) + 1
+		c.last.Logical = max2u(c.last.Logical, remote.Logical)
+		maxWall = advanceLogicalWall(maxWall, &c.last.Logical)
 	case maxWall == c.last.WallTime:
-		c.last.Logical++
+		maxWall = advanceLogicalWall(maxWall, &c.last.Logical)
 	case maxWall == remote.WallTime:
-		c.last.Logical = remote.Logical + 1
+		c.last.Logical = remote.Logical
+		maxWall = advanceLogicalWall(maxWall, &c.last.Logical)
 	default:
 		c.last.Logical = 0
 	}
