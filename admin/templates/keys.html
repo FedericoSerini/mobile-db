@@ -1,0 +1,15 @@
+{{define "keys"}}
+<section>
+  <h2>Database Encryption Key</h2>
+  {{if .KeyBackupStale}}
+  <div style="background:#fee2e2;padding:1rem;border-radius:6px;margin-bottom:1rem">
+    Last key backup was over 30 days ago. Back up your encryption key.
+  </div>
+  {{end}}
+  <button class="btn btn-primary"
+    hx-post="/admin/keys/rotate"
+    hx-confirm="Rotate DB encryption key?"
+    hx-target="#key-status">Rotate Key</button>
+  <div id="key-status"></div>
+</section>
+{{end}}

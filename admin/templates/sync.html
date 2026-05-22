@@ -1,0 +1,15 @@
+{{define "sync"}}
+<table>
+  <thead><tr><th>App ID</th><th>Dataset ID</th><th>Op Count</th><th>Last Sync</th></tr></thead>
+  <tbody>
+    {{range .Entries}}
+    <tr>
+      <td>{{.AppID}}</td><td>{{.DatasetID}}</td><td>{{.OpCount}}</td>
+      <td>{{.LastSync.Format "2006-01-02 15:04:05"}}</td>
+    </tr>
+    {{else}}
+    <tr><td colspan="4">No sync activity.</td></tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
