@@ -94,10 +94,16 @@ func Run(ctx context.Context, cfg *Config, log zerolog.Logger) error {
 	logged := middleware.RequestLogger(log)(mainMux)
 
 	if cfg.BackupDestination != "" {
+		backupInterval := 24 * time.Hour
+		if cfg.BackupInterval != "" {
+			if d, err := time.ParseDuration(cfg.BackupInterval); err == nil {
+				backupInterval = d
+			}
+		}
 		br := backup.NewRunner(backup.Config{
 			SourcePaths: []string{dbPath},
 			Destination: cfg.BackupDestination,
-			Interval:    24 * time.Hour,
+			Interval:    backupInterval,
 		})
 		go br.Start()
 		defer br.Stop()

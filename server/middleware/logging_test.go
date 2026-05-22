@@ -35,4 +35,7 @@ func TestLoggingMiddlewareLogs(t *testing.T) {
 	if entry["status"] != float64(200) {
 		t.Fatalf("unexpected status: %v", entry["status"])
 	}
+	if _, ok := entry["app_id"]; !ok {
+		t.Fatal("missing app_id")
+	}
 }

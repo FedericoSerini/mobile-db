@@ -24,12 +24,14 @@ func RequestLogger(log zerolog.Logger) func(http.Handler) http.Handler {
 			start := time.Now()
 			rw := &responseWriter{ResponseWriter: w, code: http.StatusOK}
 			next.ServeHTTP(rw, r)
+			appID, _ := r.Context().Value(CtxAppID).(string)
 			log.Info().
 				Str("method", r.Method).
 				Str("path", r.URL.Path).
 				Int("status", rw.code).
 				Int64("duration_ms", time.Since(start).Milliseconds()).
 				Str("remote_addr", r.RemoteAddr).
+				Str("app_id", appID).
 				Msg("request")
 		})
 	}

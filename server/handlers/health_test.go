@@ -30,4 +30,10 @@ func TestHealthEndpoint(t *testing.T) {
 	if _, ok := resp["uptime_seconds"]; !ok {
 		t.Fatal("missing uptime_seconds")
 	}
+	if resp["db_status"] != "ok" {
+		t.Fatalf("want db_status=ok, got %v", resp["db_status"])
+	}
+	if _, ok := resp["active_sse_connections"]; !ok {
+		t.Fatal("missing active_sse_connections")
+	}
 }
