@@ -26,6 +26,7 @@ func (h *SyncHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	compressed, err := io.ReadAll(io.LimitReader(r.Body, 4<<20))
+	defer r.Body.Close()
 	if err != nil {
 		http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
 		return

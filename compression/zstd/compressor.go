@@ -12,8 +12,14 @@ type Compressor struct {
 }
 
 func NewCompressor() *Compressor {
-	enc, _ := gozstd.NewWriter(nil)
-	dec, _ := gozstd.NewReader(nil)
+	enc, err := gozstd.NewWriter(nil)
+	if err != nil {
+		panic("zstd: failed to create encoder: " + err.Error())
+	}
+	dec, err := gozstd.NewReader(nil)
+	if err != nil {
+		panic("zstd: failed to create decoder: " + err.Error())
+	}
 	return &Compressor{enc: enc, dec: dec}
 }
 
