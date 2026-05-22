@@ -2,6 +2,7 @@ package crsqlite
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/federicoserini/mobile-db/core"
@@ -109,9 +110,11 @@ func (b *Backend) OpCount(ctx context.Context, appID, userID, datasetID string) 
 	return CountOps(ctx, b.handle.DB(), appID, userID, datasetID)
 }
 
-// Compact performs LWW merge of all ops, stores the winners, and discards the
-// rest. After compaction the op count equals the number of unique (doc, field)
-// pairs. Implements core.StorageBackend.
+// Compact materializes the LWW-merged state into the snapshots table, archives
+// all active ops (status='archived'), and re-inserts only the winning op per
+// (doc, field) as fresh active rows. After compaction the active op count
+// equals the number of unique (doc, field) pairs.
+// Implements core.StorageBackend.
 func (b *Backend) Compact(ctx context.Context, appID, userID, datasetID string) error {
 	if err := EnsureDataset(ctx, b.handle.DB(), appID, userID, datasetID); err != nil {
 		return fmt.Errorf("Compact ensure dataset: %w", err)
@@ -122,46 +125,78 @@ func (b *Backend) Compact(ctx context.Context, appID, userID, datasetID string) 
 		return fmt.Errorf("Compact query: %w", err)
 	}
 
-	// LWW merge — keep only the winning op per (doc, field).
-	winners := mergeOpsLocal(ops)
-
-	// Build a map from op_id to op for fast lookup.
-	opsByID := make(map[string]core.CRDTOp, len(ops))
-	for _, op := range ops {
-		opsByID[op.OpID] = op
+	// LWW merge — determine the winning op per (doc, field).
+	type winnerEntry struct {
+		op    core.CRDTOp
+		found bool
 	}
-
-	// Collect the winning op for each (doc, field).
-	var kept []core.CRDTOp
-	for docID, fields := range winners {
-		for field := range fields {
-			// Find the op that produced this winner.
-			for _, op := range ops {
-				if op.DocID == docID && op.Field == field {
-					var candidate core.CRDTOp
-					found := false
-					for _, op2 := range ops {
-						if op2.DocID == docID && op2.Field == field {
-							if !found || beforeHLC(candidate.Timestamp, op2.Timestamp) {
-								candidate = op2
-								found = true
-							}
-						}
-					}
-					kept = append(kept, candidate)
-					break
-				}
-			}
+	type docFieldKey struct{ doc, field string }
+	winMap := make(map[docFieldKey]winnerEntry)
+	for _, op := range ops {
+		key := docFieldKey{op.DocID, op.Field}
+		cur := winMap[key]
+		if !cur.found || beforeHLC(cur.op.Timestamp, op.Timestamp) {
+			winMap[key] = winnerEntry{op: op, found: true}
 		}
 	}
 
-	// Delete all ops and re-insert only winners.
-	if err := DeleteOps(ctx, b.handle.DB(), appID, userID, datasetID); err != nil {
-		return fmt.Errorf("Compact delete: %w", err)
+	var kept []core.CRDTOp
+	for _, w := range winMap {
+		kept = append(kept, w.op)
 	}
+
+	// Compute snapshot HLC (max across winners).
+	var snapHLC core.HLC
+	for _, op := range kept {
+		if beforeHLC(snapHLC, op.Timestamp) {
+			snapHLC = op.Timestamp
+		}
+	}
+
+	// Build merged doc map for snapshot storage.
+	type docState struct {
+		fields  map[string]any
+		hlc     core.HLC
+		devID   string
+	}
+	docMap := make(map[string]*docState)
+	for _, op := range kept {
+		ds, ok := docMap[op.DocID]
+		if !ok {
+			ds = &docState{fields: make(map[string]any)}
+			docMap[op.DocID] = ds
+		}
+		ds.fields[op.Field] = op.Value
+		if beforeHLC(ds.hlc, op.Timestamp) {
+			ds.hlc = op.Timestamp
+			ds.devID = op.DeviceID
+		}
+	}
+
+	// Write one snapshot row per doc.
+	for docID, ds := range docMap {
+		data, err := json.Marshal(ds.fields)
+		if err != nil {
+			return fmt.Errorf("Compact marshal snapshot for doc %s: %w", docID, err)
+		}
+		if err := WriteSnapshot(ctx, b.handle.DB(),
+			datasetID, userID, docID,
+			string(data),
+			ds.hlc.WallTime, ds.hlc.Logical, ds.devID,
+		); err != nil {
+			return fmt.Errorf("Compact write snapshot: %w", err)
+		}
+	}
+
+	// Archive all currently active ops.
+	if err := ArchiveOps(ctx, b.handle.DB(), appID, userID, datasetID); err != nil {
+		return fmt.Errorf("Compact archive: %w", err)
+	}
+
+	// Reactivate winning ops (sets status='active' on archived rows with matching op_id).
 	if len(kept) > 0 {
-		if err := InsertOps(ctx, b.handle.DB(), appID, userID, datasetID, kept); err != nil {
-			return fmt.Errorf("Compact re-insert: %w", err)
+		if err := ReactivateOps(ctx, b.handle.DB(), appID, userID, datasetID, kept); err != nil {
+			return fmt.Errorf("Compact reactivate winners: %w", err)
 		}
 	}
 	return nil
