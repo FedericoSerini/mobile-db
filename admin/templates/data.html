@@ -1,0 +1,36 @@
+{{define "data"}}
+<form method="get" action="/admin/data" style="margin-bottom:1rem">
+  <label>App ID: <input name="app_id" value="{{.AppID}}" required></label>
+  <button class="btn btn-primary" type="submit">Load</button>
+</form>
+{{if .Datasets}}
+<label>Dataset:
+  <select hx-get="/admin/data/docs" hx-target="#docs-table"
+          hx-vals='{"app_id":"{{.AppID}}"}' name="dataset_id">
+    <option value="">— choose —</option>
+    {{range .Datasets}}<option value="{{.}}">{{.}}</option>{{end}}
+  </select>
+</label>
+{{end}}
+<div id="docs-table">
+  {{if .Docs}}
+  <table>
+    <thead><tr><th>Doc ID</th><th>Data</th><th></th></tr></thead>
+    <tbody>
+      {{range .Docs}}
+      <tr>
+        <td><code>{{index . "doc_id"}}</code></td>
+        <td><pre style="margin:0;font-size:0.8rem">{{index . "data"}}</pre></td>
+        <td>
+          <button class="btn btn-danger"
+            hx-delete="/admin/data/doc?app_id={{$.AppID}}&dataset_id={{$.DatasetID}}&doc_id={{index . "doc_id"}}"
+            hx-confirm="Delete this document?"
+            hx-target="closest tr" hx-swap="outerHTML">Delete</button>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{end}}
+</div>
+{{end}}
