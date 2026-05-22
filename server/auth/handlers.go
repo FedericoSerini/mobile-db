@@ -66,7 +66,11 @@ func (h *Handlers) Token(w http.ResponseWriter, r *http.Request) {
 	}
 	var refreshToken string
 	if h.refreshSvc != nil {
-		refreshToken, _ = h.refreshSvc.IssueRefresh(r.Context(), req.AppID, req.UserID)
+		refreshToken, err = h.refreshSvc.IssueRefresh(r.Context(), req.AppID, req.UserID)
+		if err != nil {
+			http.Error(w, "failed to issue refresh token", http.StatusInternalServerError)
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]string{
 		"access_token":  token,

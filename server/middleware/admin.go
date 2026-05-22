@@ -30,7 +30,10 @@ const (
 func RequireAdminAuth(passwordHash string, allowedIPs []string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+			ip, _, err := net.SplitHostPort(r.RemoteAddr)
+			if err != nil {
+				ip = r.RemoteAddr
+			}
 			if len(allowedIPs) > 0 && !ipAllowed(ip, allowedIPs) {
 				http.Error(w, "forbidden", http.StatusForbidden)
 				return
