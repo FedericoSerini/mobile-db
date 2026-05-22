@@ -2,6 +2,7 @@ package crsqlite
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 
@@ -33,6 +34,13 @@ func NewBackend(path, key, extPath string) (*Backend, error) {
 func (b *Backend) Close() error {
 	return b.handle.Close()
 }
+
+// DB returns the underlying *sql.DB. Used by auth/admin adapters.
+func (b *Backend) DB() *sql.DB { return b.handle.DB() }
+
+// Meta returns a MetaDB view of the backend's underlying database.
+// It shares the same connection — do NOT call Close on the returned MetaDB.
+func (b *Backend) Meta() *MetaDB { return &MetaDB{db: b.handle.DB()} }
 
 // MergeOps persists the incoming ops, deduplicating by op_id.
 // Implements core.StorageBackend.
