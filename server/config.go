@@ -54,17 +54,32 @@ func LoadConfig() (*Config, error) {
 		if err != nil {
 			return nil, errors.New("COMPACTION_THRESHOLD must be an integer")
 		}
+		if n < 0 {
+			return nil, errors.New("COMPACTION_THRESHOLD must be non-negative")
+		}
 		cfg.CompactionThreshold = n
 	} else {
 		cfg.CompactionThreshold = 1000
 	}
 
 	if raw := os.Getenv("ADMIN_ALLOWED_IPS"); raw != "" {
-		cfg.AdminAllowedIPs = strings.Split(raw, ",")
+		parts := strings.Split(raw, ",")
+		for i, p := range parts {
+			parts[i] = strings.TrimSpace(p)
+		}
+		cfg.AdminAllowedIPs = parts
 	}
 
 	if len(missing) > 0 {
 		return nil, errors.New("missing required env vars: " + strings.Join(missing, ", "))
 	}
+
+	if len(cfg.JWTSecret) < 32 {
+		return nil, errors.New("JWT_SECRET must be at least 32 bytes")
+	}
+	if len(cfg.DBEncryptionKey) < 32 {
+		return nil, errors.New("DB_ENCRYPTION_KEY must be at least 32 bytes")
+	}
+
 	return cfg, nil
 }
