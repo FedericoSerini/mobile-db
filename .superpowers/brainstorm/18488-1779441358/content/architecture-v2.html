@@ -1,0 +1,167 @@
+<h2>System Architecture <span style="color:#f59e0b;font-size:0.75rem;vertical-align:middle">v2 — key rotation</span></h2>
+<p class="subtitle">Go backend · cr-sqlite clients · HTTP/2 + SSE · CRDT merge</p>
+
+<div class="mockup">
+  <div class="mockup-header">Full System — Component Map</div>
+  <div class="mockup-body" style="font-family:monospace;font-size:0.85rem;line-height:2">
+
+    <div style="display:flex;gap:2rem;align-items:flex-start;flex-wrap:wrap">
+
+      <!-- CLIENTS -->
+      <div style="flex:1;min-width:200px">
+        <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:1rem">
+          <div style="color:#94a3b8;font-size:0.7rem;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.5rem">Clients</div>
+
+          <div style="background:#0f172a;border:1px solid #22c55e33;border-radius:6px;padding:.75rem;margin-bottom:.75rem">
+            <div style="color:#22c55e;font-weight:bold">📱 Mobile App</div>
+            <div style="color:#94a3b8;font-size:0.75rem">iOS / Android</div>
+            <div style="margin-top:.5rem;color:#cbd5e1;font-size:0.8rem">
+              ┌─ cr-sqlite (native)<br>
+              ├─ CRDT engine<br>
+              ├─ Sync client<br>
+              └─ Encrypted at rest
+            </div>
+          </div>
+
+          <div style="background:#0f172a;border:1px solid #3b82f633;border-radius:6px;padding:.75rem">
+            <div style="color:#3b82f6;font-weight:bold">🌐 Web App</div>
+            <div style="color:#94a3b8;font-size:0.75rem">Browser (WASM)</div>
+            <div style="margin-top:.5rem;color:#cbd5e1;font-size:0.8rem">
+              ┌─ cr-sqlite (WASM)<br>
+              ├─ CRDT engine<br>
+              ├─ Sync client<br>
+              └─ IndexedDB fallback
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ARROWS -->
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem 0;color:#94a3b8;font-size:0.75rem;gap:.5rem;min-width:120px">
+        <div style="color:#f59e0b;font-weight:bold">HTTP/2 + TLS</div>
+        <div>⟶ X-App-Key + Bearer JWT</div>
+        <div>⟶ POST /sync (delta + Zstd)</div>
+        <div style="border-top:1px dashed #334155;width:100%;margin:.25rem 0"></div>
+        <div>⟵ SSE /events (push notify)</div>
+        <div style="border-top:1px dashed #334155;width:100%;margin:.25rem 0"></div>
+        <div>⟶ POST /auth/refresh</div>
+      </div>
+
+      <!-- SERVER -->
+      <div style="flex:1;min-width:200px">
+        <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:1rem">
+          <div style="color:#94a3b8;font-size:0.7rem;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.5rem">Server (Go binary)</div>
+
+          <div style="background:#0f172a;border:1px solid #f59e0b33;border-radius:6px;padding:.75rem;margin-bottom:.75rem">
+            <div style="color:#f59e0b;font-weight:bold">Sync Engine</div>
+            <div style="color:#cbd5e1;font-size:0.8rem;margin-top:.5rem">
+              ┌─ Receive delta ops<br>
+              ├─ CRDT merge<br>
+              ├─ Compute response delta<br>
+              └─ Broadcast via SSE
+            </div>
+          </div>
+
+          <div style="background:#0f172a;border:1px solid #a855f733;border-radius:6px;padding:.75rem;margin-bottom:.75rem">
+            <div style="color:#a855f7;font-weight:bold">Auth Layer ✦ updated</div>
+            <div style="color:#cbd5e1;font-size:0.8rem;margin-top:.5rem">
+              <span style="color:#f472b6">App Key middleware:</span><br>
+              ┌─ Lookup key_id → app_keys table<br>
+              ├─ Check status: active | deprecated<br>
+              ├─ Reject if revoked or expired<br>
+              └─ Route to tenant namespace<br>
+              <br>
+              <span style="color:#f472b6">JWT middleware:</span><br>
+              ┌─ Verify signature + expiry<br>
+              ├─ Extract user_id<br>
+              └─ Attach to request context<br>
+              <br>
+              <span style="color:#f472b6">Refresh endpoint:</span><br>
+              ┌─ Validate refresh token (one-time)<br>
+              ├─ Rotate refresh token on use<br>
+              └─ Issue new access JWT (15min TTL)
+            </div>
+          </div>
+
+          <div style="background:#0f172a;border:1px solid #06b6d433;border-radius:6px;padding:.75rem">
+            <div style="color:#06b6d4;font-weight:bold">Storage</div>
+            <div style="color:#cbd5e1;font-size:0.8rem;margin-top:.5rem">
+              ┌─ SQLite per tenant<br>
+              ├─ cr-sqlite CRDT merge<br>
+              └─ Encrypted at rest
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- KEY ROTATION TABLE -->
+    <div style="margin-top:1.5rem;background:#1e293b;border:1px solid #f472b633;border-radius:8px;padding:1rem">
+      <div style="color:#f472b6;font-size:0.7rem;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.75rem">App Key Lifecycle (key_id versioning)</div>
+      <div style="display:flex;gap:2rem;flex-wrap:wrap;font-size:0.82rem">
+        <div style="color:#cbd5e1">
+          <span style="color:#94a3b8">Table:</span> app_keys<br>
+          ┌─ key_id (uuid)<br>
+          ├─ app_key_hash (bcrypt)<br>
+          ├─ app (tenant name)<br>
+          ├─ status: <span style="color:#22c55e">active</span> | <span style="color:#f59e0b">deprecated</span> | <span style="color:#ef4444">revoked</span><br>
+          ├─ created_at<br>
+          └─ expires_at (nullable)
+        </div>
+        <div style="color:#cbd5e1">
+          <span style="color:#94a3b8">Rotation flow:</span><br>
+          1. Generate new key → <span style="color:#22c55e">active</span><br>
+          2. Old key → <span style="color:#f59e0b">deprecated</span> (grace ~7d)<br>
+          3. Update client config<br>
+          4. Old key → <span style="color:#ef4444">revoked</span><br>
+          <br>
+          Max 2 active keys per app.<br>
+          No downtime. No client lock-out.
+        </div>
+        <div style="color:#cbd5e1">
+          <span style="color:#94a3b8">JWT tokens:</span><br>
+          Access token: 15min TTL<br>
+          Refresh token: 30d, one-time use<br>
+          Refresh rotates on each use<br>
+          Reuse detected → revoke all tokens
+        </div>
+      </div>
+    </div>
+
+    <!-- DATA SEGREGATION -->
+    <div style="margin-top:1rem;background:#1e293b;border:1px solid #334155;border-radius:8px;padding:1rem">
+      <div style="color:#94a3b8;font-size:0.7rem;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.75rem">Data Segregation Model</div>
+      <div style="color:#cbd5e1;font-size:0.82rem;display:flex;gap:1.5rem;flex-wrap:wrap">
+        <div>
+          <span style="color:#f59e0b">app_key</span> = tenant namespace<br>
+          <span style="color:#a855f7">user_id</span> = user within tenant<br>
+          <span style="color:#22c55e">dataset_id</span> = logical collection<br>
+          <span style="color:#3b82f6">doc_id</span> = individual JSON document
+        </div>
+        <div style="color:#64748b">
+          Path: <span style="color:#f59e0b">app</span>/<span style="color:#a855f7">user</span>/<span style="color:#22c55e">dataset</span>/<span style="color:#3b82f6">doc</span><br>
+          SQLite table: one per dataset<br>
+          No cross-tenant data leakage<br>
+          Each doc = independent CRDT
+        </div>
+      </div>
+    </div>
+
+    <!-- DELTA SYNC FLOW -->
+    <div style="margin-top:1rem;background:#1e293b;border:1px solid #334155;border-radius:8px;padding:1rem">
+      <div style="color:#94a3b8;font-size:0.7rem;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.75rem">Delta Sync Flow</div>
+      <div style="color:#cbd5e1;font-size:0.82rem">
+        1. Client writes locally → CRDT ops appended to local log<br>
+        2. On sync: client sends <span style="color:#f59e0b">{ clock, ops[] }</span> compressed with Zstd<br>
+        3. Server merges ops, computes diff vs client clock<br>
+        4. Server replies with <span style="color:#22c55e">{ new_clock, server_ops[] }</span> compressed<br>
+        5. SSE channel notifies other clients → they pull delta<br>
+        6. Periodic compaction: ops log → snapshot (reduce storage)
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:1rem">Auth layer updated with key versioning + JWT rotation. Does this look right? Reply in terminal.</p>

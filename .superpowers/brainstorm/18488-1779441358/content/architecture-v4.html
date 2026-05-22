@@ -1,0 +1,176 @@
+<h2>System Architecture <span style="color:#f59e0b;font-size:0.75rem;vertical-align:middle">v4 — encryption everywhere</span></h2>
+<p class="subtitle">Go backend · cr-sqlite clients · HTTP/2 + SSE · CRDT merge · cert pinning · SQLCipher</p>
+
+<div class="mockup">
+  <div class="mockup-header">Full System — Component Map</div>
+  <div class="mockup-body" style="font-family:monospace;font-size:0.85rem;line-height:1.8">
+
+    <div style="display:flex;gap:2rem;align-items:flex-start;flex-wrap:wrap">
+
+      <!-- CLIENTS -->
+      <div style="flex:1;min-width:210px">
+        <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:1rem">
+          <div style="color:#94a3b8;font-size:0.7rem;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.5rem">Clients</div>
+
+          <div style="background:#0f172a;border:1px solid #22c55e33;border-radius:6px;padding:.75rem;margin-bottom:.75rem">
+            <div style="color:#22c55e;font-weight:bold">📱 Mobile App (iOS / Android)</div>
+            <div style="margin-top:.5rem;color:#cbd5e1;font-size:0.8rem">
+              ┌─ cr-sqlite + <span style="color:#f59e0b">SQLCipher</span> (at rest)<br>
+              ├─ Encryption key → <span style="color:#f59e0b">Secure Enclave / Keystore</span><br>
+              ├─ CRDT engine<br>
+              ├─ Sync client<br>
+              ├─ 🔐 device_secret in Keychain/Keystore<br>
+              └─ 📌 <span style="color:#f472b6">Cert pinning</span> (URLSession / OkHttp)
+            </div>
+          </div>
+
+          <div style="background:#0f172a;border:1px solid #3b82f633;border-radius:6px;padding:.75rem">
+            <div style="color:#3b82f6;font-weight:bold">🌐 Web App (Browser)</div>
+            <div style="margin-top:.5rem;color:#cbd5e1;font-size:0.8rem">
+              ┌─ cr-sqlite WASM + <span style="color:#f59e0b">AES-GCM</span> (at rest)<br>
+              ├─ Encryption key → <span style="color:#f59e0b">SubtleCrypto non-extractable</span><br>
+              ├─ CRDT engine<br>
+              ├─ Sync client<br>
+              ├─ 🔐 device_secret → SubtleCrypto + IDB<br>
+              └─ ⚠️ <span style="color:#94a3b8">No cert pinning (browser limitation)</span><br>
+              <span style="color:#64748b;font-size:0.75rem">   mitigated by TLS 1.3 + HSTS preload</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TRANSIT -->
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem 0;color:#94a3b8;font-size:0.75rem;gap:.4rem;min-width:130px">
+        <div style="color:#f472b6;font-weight:bold;font-size:0.85rem">🔒 Transit</div>
+        <div style="color:#f472b6">TLS 1.3</div>
+        <div style="color:#f472b6">+ cert pinning</div>
+        <div style="color:#f472b6">+ HSTS preload</div>
+        <div style="border-top:1px dashed #334155;width:100%;margin:.3rem 0"></div>
+        <div>⟶ X-Device-Key: id:secret</div>
+        <div>⟶ Authorization: Bearer JWT</div>
+        <div>⟶ POST /sync</div>
+        <div>⟶ delta + <span style="color:#06b6d4">Zstd</span></div>
+        <div style="border-top:1px dashed #334155;width:100%;margin:.3rem 0"></div>
+        <div>⟵ SSE /events</div>
+        <div>⟶ POST /auth/refresh</div>
+        <div>⟶ POST /devices/register</div>
+        <div>⟶ POST /devices/rotate-key</div>
+      </div>
+
+      <!-- SERVER -->
+      <div style="flex:1;min-width:210px">
+        <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:1rem">
+          <div style="color:#94a3b8;font-size:0.7rem;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.5rem">Server (Go binary)</div>
+
+          <div style="background:#0f172a;border:1px solid #f59e0b33;border-radius:6px;padding:.75rem;margin-bottom:.75rem">
+            <div style="color:#f59e0b;font-weight:bold">Sync Engine</div>
+            <div style="color:#cbd5e1;font-size:0.8rem;margin-top:.5rem">
+              ┌─ Receive + decompress (Zstd)<br>
+              ├─ CRDT merge<br>
+              ├─ Compute response delta<br>
+              ├─ Compress response (Zstd)<br>
+              └─ Broadcast via SSE
+            </div>
+          </div>
+
+          <div style="background:#0f172a;border:1px solid #f472b633;border-radius:6px;padding:.75rem;margin-bottom:.75rem">
+            <div style="color:#f472b6;font-weight:bold">Auth Layer — per-device</div>
+            <div style="color:#cbd5e1;font-size:0.8rem;margin-top:.5rem">
+              ┌─ Device key lookup + bcrypt verify<br>
+              ├─ Status: active | revoked<br>
+              ├─ JWT verify + user_id extract<br>
+              ├─ Dataset ACL check<br>
+              └─ /devices/register|rotate|delete
+            </div>
+          </div>
+
+          <div style="background:#0f172a;border:1px solid #06b6d433;border-radius:6px;padding:.75rem">
+            <div style="color:#06b6d4;font-weight:bold">Storage — <span style="color:#f59e0b">SQLCipher encrypted</span></div>
+            <div style="color:#cbd5e1;font-size:0.8rem;margin-top:.5rem">
+              ┌─ SQLite per tenant (SQLCipher)<br>
+              ├─ cr-sqlite CRDT merge<br>
+              ├─ <span style="color:#f59e0b">DB key injected via env var</span><br>
+              └─ <span style="color:#f59e0b">Key never written to disk</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ENCRYPTION SUMMARY -->
+    <div style="margin-top:1.5rem;background:#1e293b;border:1px solid #22c55e33;border-radius:8px;padding:1rem">
+      <div style="color:#22c55e;font-size:0.7rem;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.75rem">Encryption at Every Layer</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;font-size:0.82rem">
+
+        <div style="background:#0f172a;border-radius:6px;padding:.75rem">
+          <div style="color:#f472b6;font-weight:bold;margin-bottom:.4rem">📌 Transit — MITM defense</div>
+          <div style="color:#cbd5e1">
+            TLS 1.3 (all traffic)<br>
+            Cert pinning on iOS + Android<br>
+            HSTS preload on web<br>
+            <span style="color:#64748b">Rogue CA → client rejects</span>
+          </div>
+        </div>
+
+        <div style="background:#0f172a;border-radius:6px;padding:.75rem">
+          <div style="color:#22c55e;font-weight:bold;margin-bottom:.4rem">📱 Client at rest</div>
+          <div style="color:#cbd5e1">
+            SQLCipher (mobile)<br>
+            AES-GCM via SubtleCrypto (web)<br>
+            Keys in Secure Enclave / Keystore<br>
+            <span style="color:#64748b">Stolen device → data unreadable</span>
+          </div>
+        </div>
+
+        <div style="background:#0f172a;border-radius:6px;padding:.75rem">
+          <div style="color:#06b6d4;font-weight:bold;margin-bottom:.4rem">🖥 Server at rest</div>
+          <div style="color:#cbd5e1">
+            SQLCipher per-tenant DB<br>
+            DB key in env var / secrets mgr<br>
+            Key never touches disk<br>
+            <span style="color:#64748b">Cloud provider sees: encrypted blob</span>
+          </div>
+        </div>
+
+        <div style="background:#0f172a;border-radius:6px;padding:.75rem">
+          <div style="color:#f59e0b;font-weight:bold;margin-bottom:.4rem">🔑 Key management</div>
+          <div style="color:#cbd5e1">
+            Server key: env var or Vault/<br>
+            Infisical (self-hosted ok)<br>
+            Client keys: hardware-backed<br>
+            <span style="color:#64748b">You hold all keys, no cloud dependency</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- DEVICE KEY + DATA SEGREGATION condensed -->
+    <div style="margin-top:1rem;display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+
+      <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:1rem">
+        <div style="color:#94a3b8;font-size:0.7rem;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.5rem">Data Segregation</div>
+        <div style="color:#cbd5e1;font-size:0.82rem">
+          <span style="color:#f59e0b">app_id</span> / <span style="color:#f472b6">device_id</span> / <span style="color:#a855f7">user_id</span> / <span style="color:#22c55e">dataset_id</span> / <span style="color:#3b82f6">doc_id</span><br>
+          SQLite file per tenant · table per dataset<br>
+          No cross-tenant leakage possible
+        </div>
+      </div>
+
+      <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:1rem">
+        <div style="color:#94a3b8;font-size:0.7rem;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.5rem">Delta Sync</div>
+        <div style="color:#cbd5e1;font-size:0.82rem">
+          Local write → CRDT op log<br>
+          Sync: <span style="color:#f59e0b">{ clock, ops[] }</span> → Zstd → TLS → server<br>
+          Server merges → <span style="color:#22c55e">{ new_clock, ops[] }</span> → SSE notify<br>
+          Periodic compaction: log → snapshot
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:1rem">Encryption complete: transit + client at rest + server at rest. Reply in terminal to confirm or ask questions.</p>

@@ -1,0 +1,299 @@
+<h2>mobile-db — Design Spec</h2>
+<p class="subtitle">Review and confirm before implementation plan. Reply in terminal with changes or approval.</p>
+
+<div class="section">
+  <h3>Overview</h3>
+  <p style="color:#cbd5e1">Self-hosted JSON sync system. Single Go binary server + client library (mobile + web). Offline-first, CRDT merge, delta sync, encrypted everywhere. Designed for clean extensibility toward LoRa/IoT.</p>
+</div>
+
+<div class="section">
+  <h3>Decisions Log</h3>
+  <table style="width:100%;border-collapse:collapse;font-size:0.82rem;color:#cbd5e1">
+    <tr style="border-bottom:1px solid #334155">
+      <th style="text-align:left;padding:.5rem;color:#94a3b8">Question</th>
+      <th style="text-align:left;padding:.5rem;color:#94a3b8">Decision</th>
+      <th style="text-align:left;padding:.5rem;color:#94a3b8">Rationale</th>
+    </tr>
+    <tr style="border-bottom:1px solid #1e293b"><td style="padding:.4rem .5rem">Who uses this?</td><td style="padding:.4rem .5rem;color:#22c55e">Self-hosted, owner builds apps</td><td style="padding:.4rem .5rem;color:#64748b">Not a platform, not an SDK</td></tr>
+    <tr style="border-bottom:1px solid #1e293b"><td style="padding:.4rem .5rem">Conflict resolution</td><td style="padding:.4rem .5rem;color:#22c55e">CRDT automatic merge</td><td style="padding:.4rem .5rem;color:#64748b">No data loss, deterministic</td></tr>
+    <tr style="border-bottom:1px solid #1e293b"><td style="padding:.4rem .5rem">Scale</td><td style="padding:.4rem .5rem;color:#22c55e">Personal/small team</td><td style="padding:.4rem .5rem;color:#64748b">No sharding needed</td></tr>
+    <tr style="border-bottom:1px solid #1e293b"><td style="padding:.4rem .5rem">Offline behavior</td><td style="padding:.4rem .5rem;color:#22c55e">Offline-first</td><td style="padding:.4rem .5rem;color:#64748b">Full local copy, sync on reconnect</td></tr>
+    <tr style="border-bottom:1px solid #1e293b"><td style="padding:.4rem .5rem">Auth model</td><td style="padding:.4rem .5rem;color:#22c55e">Device key + user JWT</td><td style="padding:.4rem .5rem;color:#64748b">App-level + user-level isolation</td></tr>
+    <tr style="border-bottom:1px solid #1e293b"><td style="padding:.4rem .5rem">Transport</td><td style="padding:.4rem .5rem;color:#22c55e">HTTP/2 + SSE</td><td style="padding:.4rem .5rem;color:#64748b">Multiplexed up, server-push down</td></tr>
+    <tr style="border-bottom:1px solid #1e293b"><td style="padding:.4rem .5rem">Architecture</td><td style="padding:.4rem .5rem;color:#22c55e">Go + cr-sqlite</td><td style="padding:.4rem .5rem;color:#64748b">Single binary, SQLite everywhere</td></tr>
+    <tr><td style="padding:.4rem .5rem">Admin console</td><td style="padding:.4rem .5rem;color:#22c55e">Go templates + HTMX</td><td style="padding:.4rem .5rem;color:#64748b">Ships in binary, no SPA</td></tr>
+  </table>
+</div>
+
+<div class="section">
+  <h3>§1 — Architecture</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+    <div style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:.85rem;font-size:0.8rem">
+      <div style="color:#f59e0b;font-weight:bold;margin-bottom:.5rem">Code Structure — Ports &amp; Adapters</div>
+      <pre style="margin:0;color:#cbd5e1;font-size:0.75rem;line-height:1.6">core/
+  crdt/      ← merge, op log, compaction
+  sync/      ← transport-agnostic interfaces
+  dataset/   ← model, segregation, schema_version
+
+transport/
+  http2/     ← HTTP/2 + SSE (current)
+  lora/      ← LoRa webhook (v2)
+
+storage/
+  crsqlite/  ← cr-sqlite (mobile, web, server)
+  iot/       ← MCU backend (v2)
+
+compression/
+  zstd/      ← HTTP/2 transport
+  cbor/      ← IoT payloads
+
+admin/       ← Go templates, go:embed
+server/      ← router, middleware, config</pre>
+      <div style="color:#64748b;font-size:0.72rem;margin-top:.5rem">Rule: core/ imports nothing outside itself</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:.75rem">
+      <div style="background:#0f172a;border:1px solid #22c55e33;border-radius:6px;padding:.75rem;font-size:0.8rem">
+        <div style="color:#22c55e;font-weight:bold">📱 Mobile (iOS/Android)</div>
+        <div style="color:#cbd5e1;margin-top:.3rem">cr-sqlite native · SQLCipher · Secure Enclave/Keystore · Cert pinning</div>
+      </div>
+      <div style="background:#0f172a;border:1px solid #3b82f633;border-radius:6px;padding:.75rem;font-size:0.8rem">
+        <div style="color:#3b82f6;font-weight:bold">🌐 Web (Browser WASM)</div>
+        <div style="color:#cbd5e1;margin-top:.3rem">cr-sqlite WASM · AES-GCM SubtleCrypto · TLS 1.3 + HSTS</div>
+      </div>
+      <div style="background:#0f172a;border:1px solid #f59e0b33;border-radius:6px;padding:.75rem;font-size:0.8rem">
+        <div style="color:#f59e0b;font-weight:bold">🖥 Server (Go binary)</div>
+        <div style="color:#cbd5e1;margin-top:.3rem">Sync engine · Auth · Admin UI · SQLCipher (data.db + meta.db)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>§2 — Data Model</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;font-size:0.82rem">
+    <div style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:.85rem">
+      <div style="color:#a855f7;font-weight:bold;margin-bottom:.5rem">Segregation Path</div>
+      <div style="color:#cbd5e1;line-height:2">
+        <span style="color:#f59e0b">app_id</span> → tenant (one SQLite file)<br>
+        <span style="color:#a855f7">user_id</span> → user within tenant (from JWT)<br>
+        <span style="color:#22c55e">dataset_id</span> → collection (one table)<br>
+        <span style="color:#3b82f6">doc_id</span> → JSON document (independent CRDT)
+      </div>
+    </div>
+    <div style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:.85rem">
+      <div style="color:#a855f7;font-weight:bold;margin-bottom:.5rem">Dataset ACL</div>
+      <table style="width:100%;border-collapse:collapse;color:#cbd5e1">
+        <tr style="border-bottom:1px solid #334155"><th style="text-align:left;color:#94a3b8;padding:.3rem">Rule</th><th style="color:#94a3b8;padding:.3rem">Read</th><th style="color:#94a3b8;padding:.3rem">Write</th></tr>
+        <tr style="border-bottom:1px solid #1e293b"><td style="padding:.3rem"><code>private</code></td><td style="padding:.3rem;text-align:center">owner</td><td style="padding:.3rem;text-align:center">owner</td></tr>
+        <tr style="border-bottom:1px solid #1e293b"><td style="padding:.3rem"><code>shared</code></td><td style="padding:.3rem;text-align:center">any user</td><td style="padding:.3rem;text-align:center">owner</td></tr>
+        <tr><td style="padding:.3rem"><code>public</code></td><td style="padding:.3rem;text-align:center">no auth</td><td style="padding:.3rem;text-align:center">owner</td></tr>
+      </table>
+    </div>
+    <div style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:.85rem;grid-column:span 2">
+      <div style="color:#a855f7;font-weight:bold;margin-bottom:.5rem">Schema Evolution</div>
+      <div style="color:#cbd5e1;font-size:0.8rem">
+        Client stores <code>last_synced_schema_version</code> locally.<br>
+        Server response <code>schema_version == local</code> → incremental CRDT merge.<br>
+        Server response <code>schema_version &gt; local</code> → discard ops, request full snapshot, update local version.<br>
+        Old ops never replayed against newer snapshot.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>§3 — Auth Layer</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;font-size:0.8rem">
+    <div style="background:#0f172a;border:1px solid #f472b633;border-radius:6px;padding:.85rem">
+      <div style="color:#f472b6;font-weight:bold;margin-bottom:.5rem">Device Keys</div>
+      <div style="color:#cbd5e1;line-height:1.8">
+        1 active key per device<br>
+        Stored: bcrypt hash<br>
+        Header: <code>X-Device-Key: id:secret</code><br>
+        Registration: <code>POST /devices/register</code><br>
+        Rotation: atomic swap, instant<br>
+        Remote wipe: <code>DELETE /devices/:id</code>
+      </div>
+    </div>
+    <div style="background:#0f172a;border:1px solid #f472b633;border-radius:6px;padding:.85rem">
+      <div style="color:#f472b6;font-weight:bold;margin-bottom:.5rem">User JWT</div>
+      <div style="color:#cbd5e1;line-height:1.8">
+        Access: 15min TTL (HS256)<br>
+        Refresh: 30d, one-time use<br>
+        Reuse → revoke all tokens<br>
+        Issued by: <code>POST /auth/token</code><br>
+        App validates user credentials<br>
+        Server only signs the JWT
+      </div>
+    </div>
+    <div style="background:#0f172a;border:1px solid #f472b633;border-radius:6px;padding:.85rem">
+      <div style="color:#f472b6;font-weight:bold;margin-bottom:.5rem">Admin Auth</div>
+      <div style="color:#cbd5e1;line-height:1.8">
+        HTTP Basic Auth + TLS<br>
+        Password: bcrypt in env var<br>
+        Session cookie: 1hr TTL<br>
+        Rate limit: 5/15min/IP<br>
+        Optional: IP allowlist<br>
+        Separate from device/user auth
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>§4 — Sync Protocol</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;font-size:0.8rem">
+    <div style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:.85rem">
+      <div style="color:#06b6d4;font-weight:bold;margin-bottom:.5rem">Wire Format</div>
+      <div style="color:#cbd5e1">
+        Encoding: <strong>CBOR</strong> (binary, IoT-friendly)<br>
+        HTTP/2: CBOR + <strong>Zstd</strong> compression<br>
+        LoRa: CBOR only (no Zstd overhead)<br><br>
+        Client→Server: <code>{ clock, ops[] }</code><br>
+        Server→Client: <code>{ new_clock, ops[], snapshot? }</code>
+      </div>
+    </div>
+    <div style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:.85rem">
+      <div style="color:#06b6d4;font-weight:bold;margin-bottom:.5rem">Sync Flow</div>
+      <div style="color:#cbd5e1;line-height:1.8;font-size:0.78rem">
+        1. Write locally → CRDT op appended<br>
+        2. POST /sync → CBOR+Zstd delta<br>
+        3. Server: verify auth + ACL<br>
+        4. Server: cr-sqlite CRDT merge<br>
+        5. Server: compute diff by HLC clock<br>
+        6. Server: respond with delta<br>
+        7. SSE broadcast → other devices pull
+      </div>
+    </div>
+    <div style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:.85rem;grid-column:span 2">
+      <div style="color:#06b6d4;font-weight:bold;margin-bottom:.5rem">Transport Interface (extensibility)</div>
+      <pre style="margin:0;color:#cbd5e1;font-size:0.75rem">type SyncTransport interface {
+    Receive(ctx context.Context) (&lt;-chan SyncMessage, error)
+    Send(ctx context.Context, msg SyncMessage) error
+    Notify(ctx context.Context, appID, userID string) error
+}</pre>
+      <div style="color:#64748b;font-size:0.75rem;margin-top:.4rem">HTTP/2+SSE today · LoRa gateway in v2 · core never changes</div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>§5–6 — Compaction &amp; LoRa Fragmentation</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;font-size:0.8rem">
+    <div style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:.85rem">
+      <div style="color:#a855f7;font-weight:bold;margin-bottom:.5rem">Op Log Compaction</div>
+      <div style="color:#cbd5e1;line-height:1.8">
+        Trigger: ops &gt; <code>COMPACTION_THRESHOLD</code> (default 1000)<br>
+        1. Materialize snapshot from all ops<br>
+        2. Write to <code>snapshots</code> table + HLC clock<br>
+        3. Archive old ops (30d TTL then prune)<br>
+        4. Cold sync: snapshot + tail ops<br>
+        5. Client clock predates snapshot → full snapshot
+      </div>
+    </div>
+    <div style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:.85rem">
+      <div style="color:#a855f7;font-weight:bold;margin-bottom:.5rem">LoRa Packet Fragmentation</div>
+      <div style="color:#cbd5e1;line-height:1.8">
+        Max payload: 51–242 bytes<br>
+        Chunks: <code>{ frag_id, seq, total, data }</code><br>
+        Reassembly: at gateway, before server<br>
+        Core sync engine: never sees fragments<br>
+        Lives entirely in <code>transport/lora/</code>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>§8–9 — Observability &amp; Backup</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;font-size:0.8rem">
+    <div style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:.85rem">
+      <div style="color:#22c55e;font-weight:bold;margin-bottom:.5rem">Logging</div>
+      <div style="color:#cbd5e1;line-height:1.8">
+        zerolog (structured JSON)<br>
+        Per-request: method, path,<br>app_id, device_id, duration, status<br>
+        Errors: stack trace<br>
+        Level: <code>LOG_LEVEL</code> env var
+      </div>
+    </div>
+    <div style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:.85rem">
+      <div style="color:#22c55e;font-weight:bold;margin-bottom:.5rem">Health &amp; Metrics</div>
+      <div style="color:#cbd5e1;line-height:1.8">
+        <code>GET /health</code> — no auth<br>
+        <code>GET /metrics</code> — Prometheus, admin auth<br>
+        Tracks: sync reqs, ops, devices,<br>SSE conns, compaction runs, DB size
+      </div>
+    </div>
+    <div style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:.85rem">
+      <div style="color:#22c55e;font-weight:bold;margin-bottom:.5rem">Backup</div>
+      <div style="color:#cbd5e1;line-height:1.8">
+        Cron dump of SQLCipher files<br>
+        Dest: local or S3-compatible<br>
+        SQLite Online Backup API<br>
+        DB key backed up separately<br>Key encrypted offline (master pwd)
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>§10 — Admin Console Routes</h3>
+  <table style="width:100%;border-collapse:collapse;font-size:0.82rem;color:#cbd5e1">
+    <tr style="border-bottom:1px solid #334155">
+      <th style="text-align:left;padding:.5rem;color:#f59e0b">Route</th>
+      <th style="text-align:left;padding:.5rem;color:#94a3b8">Function</th>
+    </tr>
+    <tr style="border-bottom:1px solid #1e293b"><td style="padding:.4rem .5rem;color:#f59e0b">/admin/devices</td><td style="padding:.4rem .5rem">List devices, revoke, remote wipe</td></tr>
+    <tr style="border-bottom:1px solid #1e293b"><td style="padding:.4rem .5rem;color:#f59e0b">/admin/apps</td><td style="padding:.4rem .5rem">Manage app registrations</td></tr>
+    <tr style="border-bottom:1px solid #1e293b"><td style="padding:.4rem .5rem;color:#f59e0b">/admin/data</td><td style="padding:.4rem .5rem">Browse datasets + documents (read + delete)</td></tr>
+    <tr style="border-bottom:1px solid #1e293b"><td style="padding:.4rem .5rem;color:#f59e0b">/admin/import</td><td style="padding:.4rem .5rem">Bulk JSON import into a dataset</td></tr>
+    <tr style="border-bottom:1px solid #1e293b"><td style="padding:.4rem .5rem;color:#f59e0b">/admin/sync</td><td style="padding:.4rem .5rem">Sync activity monitor (op counts, last seen)</td></tr>
+    <tr style="border-bottom:1px solid #1e293b"><td style="padding:.4rem .5rem;color:#f59e0b">/admin/keys</td><td style="padding:.4rem .5rem">Trigger DB key rotation, backup status</td></tr>
+    <tr><td style="padding:.4rem .5rem;color:#f59e0b">/admin/metrics</td><td style="padding:.4rem .5rem">Embedded Prometheus metrics view</td></tr>
+  </table>
+</div>
+
+<div class="section">
+  <h3>§11 — Encryption Summary</h3>
+  <table style="width:100%;border-collapse:collapse;font-size:0.82rem;color:#cbd5e1">
+    <tr style="border-bottom:1px solid #334155">
+      <th style="text-align:left;padding:.5rem;color:#94a3b8">Layer</th>
+      <th style="text-align:left;padding:.5rem;color:#94a3b8">Mechanism</th>
+      <th style="text-align:left;padding:.5rem;color:#94a3b8">Key location</th>
+    </tr>
+    <tr style="border-bottom:1px solid #1e293b"><td style="padding:.4rem .5rem">Transit (mobile)</td><td style="padding:.4rem .5rem">TLS 1.3 + cert pinning</td><td style="padding:.4rem .5rem;color:#64748b">N/A</td></tr>
+    <tr style="border-bottom:1px solid #1e293b"><td style="padding:.4rem .5rem">Transit (web)</td><td style="padding:.4rem .5rem">TLS 1.3 + HSTS preload</td><td style="padding:.4rem .5rem;color:#64748b">N/A</td></tr>
+    <tr style="border-bottom:1px solid #1e293b"><td style="padding:.4rem .5rem">Client at rest (mobile)</td><td style="padding:.4rem .5rem">SQLCipher</td><td style="padding:.4rem .5rem">Secure Enclave / Android Keystore</td></tr>
+    <tr style="border-bottom:1px solid #1e293b"><td style="padding:.4rem .5rem">Client at rest (web)</td><td style="padding:.4rem .5rem">AES-GCM (SubtleCrypto)</td><td style="padding:.4rem .5rem">Non-extractable CryptoKey</td></tr>
+    <tr style="border-bottom:1px solid #1e293b"><td style="padding:.4rem .5rem">Server at rest</td><td style="padding:.4rem .5rem">SQLCipher</td><td style="padding:.4rem .5rem">Env var, never on disk</td></tr>
+    <tr><td style="padding:.4rem .5rem">Key backup</td><td style="padding:.4rem .5rem">AES-256 (master password)</td><td style="padding:.4rem .5rem">Offline, owner-held</td></tr>
+  </table>
+</div>
+
+<div class="section">
+  <h3>§12 — Deployment</h3>
+  <div style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:.85rem;font-size:0.8rem">
+    <div style="color:#94a3b8;margin-bottom:.5rem">Single Go binary. Zero runtime dependencies. Env vars:</div>
+    <pre style="margin:0;color:#22c55e;font-size:0.78rem">ADMIN_PASSWORD_HASH=&lt;bcrypt&gt;
+JWT_SECRET=&lt;random 32 bytes&gt;
+DB_ENCRYPTION_KEY=&lt;random 32 bytes&gt;
+BACKUP_DESTINATION=s3://my-bucket/mobile-db
+LOG_LEVEL=info
+COMPACTION_THRESHOLD=1000</pre>
+    <div style="color:#64748b;margin-top:.5rem">Runs on any VPS, Docker, or bare metal. SQLite files on attached volume.</div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Future Work (v2)</h3>
+  <div style="color:#64748b;font-size:0.82rem;line-height:2">
+    • LoRa IoT device registration (pre-provisioned creds + challenge-response)<br>
+    • Minimal IoT storage backend (storage/iot/) for MCUs without SQLite<br>
+    • Multi-admin accounts with RBAC<br>
+    • Dataset-level encryption (per-dataset keys)
+  </div>
+</div>
+
+<div style="margin-top:1.5rem;padding:1rem;background:#1e293b;border:1px solid #22c55e33;border-radius:8px;font-size:0.85rem;color:#cbd5e1">
+  <strong style="color:#22c55e">Ready to review.</strong> Reply in terminal: confirm approval or list changes needed.
+</div>

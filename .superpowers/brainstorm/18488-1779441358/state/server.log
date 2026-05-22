@@ -1,0 +1,9 @@
+{"type":"server-started","port":64524,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:64524","screen_dir":"/Users/federicoserini/ws/mobile-db/.superpowers/brainstorm/18488-1779441358/content","state_dir":"/Users/federicoserini/ws/mobile-db/.superpowers/brainstorm/18488-1779441358/state"}
+{"type":"screen-added","file":"/Users/federicoserini/ws/mobile-db/.superpowers/brainstorm/18488-1779441358/content/approaches.html"}
+{"type":"screen-added","file":"/Users/federicoserini/ws/mobile-db/.superpowers/brainstorm/18488-1779441358/content/architecture.html"}
+{"type":"screen-added","file":"/Users/federicoserini/ws/mobile-db/.superpowers/brainstorm/18488-1779441358/content/architecture-v2.html"}
+{"type":"screen-added","file":"/Users/federicoserini/ws/mobile-db/.superpowers/brainstorm/18488-1779441358/content/architecture-v3.html"}
+{"type":"screen-added","file":"/Users/federicoserini/ws/mobile-db/.superpowers/brainstorm/18488-1779441358/content/architecture-v4.html"}
+{"type":"screen-added","file":"/Users/federicoserini/ws/mobile-db/.superpowers/brainstorm/18488-1779441358/content/architecture-v5.html"}
+{"type":"screen-added","file":"/Users/federicoserini/ws/mobile-db/.superpowers/brainstorm/18488-1779441358/content/spec-review.html"}
+{"type":"server-stopped","reason":"idle timeout"}

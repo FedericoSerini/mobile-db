@@ -1,0 +1,188 @@
+<h2>System Architecture <span style="color:#f59e0b;font-size:0.75rem;vertical-align:middle">v5 — admin console</span></h2>
+<p class="subtitle">Go binary · cr-sqlite · HTTP/2 + SSE · CRDT · cert pinning · SQLCipher · admin UI</p>
+
+<div class="mockup">
+  <div class="mockup-header">Full System — Component Map</div>
+  <div class="mockup-body" style="font-family:monospace;font-size:0.85rem;line-height:1.8">
+
+    <div style="display:flex;gap:1.5rem;align-items:flex-start;flex-wrap:wrap">
+
+      <!-- CLIENTS -->
+      <div style="flex:1;min-width:190px">
+        <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:1rem">
+          <div style="color:#94a3b8;font-size:0.7rem;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.5rem">Clients</div>
+
+          <div style="background:#0f172a;border:1px solid #22c55e33;border-radius:6px;padding:.75rem;margin-bottom:.75rem">
+            <div style="color:#22c55e;font-weight:bold">📱 Mobile App</div>
+            <div style="color:#94a3b8;font-size:0.75rem">iOS / Android</div>
+            <div style="margin-top:.4rem;color:#cbd5e1;font-size:0.8rem">
+              ┌─ cr-sqlite + SQLCipher<br>
+              ├─ Key → Secure Enclave/Keystore<br>
+              ├─ CRDT engine + sync client<br>
+              ├─ 🔐 device_secret in Keychain<br>
+              └─ 📌 Cert pinning (URLSession/OkHttp)
+            </div>
+          </div>
+
+          <div style="background:#0f172a;border:1px solid #3b82f633;border-radius:6px;padding:.75rem;margin-bottom:.75rem">
+            <div style="color:#3b82f6;font-weight:bold">🌐 Web App</div>
+            <div style="color:#94a3b8;font-size:0.75rem">Browser (WASM)</div>
+            <div style="margin-top:.4rem;color:#cbd5e1;font-size:0.8rem">
+              ┌─ cr-sqlite WASM + AES-GCM<br>
+              ├─ Key → SubtleCrypto non-extractable<br>
+              ├─ CRDT engine + sync client<br>
+              ├─ 🔐 device_secret → IDB<br>
+              └─ TLS 1.3 + HSTS preload
+            </div>
+          </div>
+
+          <div style="background:#0f172a;border:1px solid #f59e0b55;border-radius:6px;padding:.75rem">
+            <div style="color:#f59e0b;font-weight:bold">🛠 Admin Browser</div>
+            <div style="color:#94a3b8;font-size:0.75rem">Your machine, trusted network</div>
+            <div style="margin-top:.4rem;color:#cbd5e1;font-size:0.8rem">
+              ┌─ Server-side rendered (Go templates)<br>
+              ├─ HTTP Basic Auth over TLS<br>
+              ├─ No JS framework — ships in binary<br>
+              └─ HTMX for dynamic interactions
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TRANSIT -->
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem 0;color:#94a3b8;font-size:0.72rem;gap:.3rem;min-width:110px">
+        <div style="color:#f472b6;font-weight:bold">🔒 TLS 1.3</div>
+        <div style="color:#f472b6">+ cert pinning</div>
+        <div style="border-top:1px dashed #334155;width:100%;margin:.2rem 0"></div>
+        <div>⟶ X-Device-Key</div>
+        <div>⟶ Bearer JWT</div>
+        <div>⟶ POST /sync</div>
+        <div>⟵ SSE /events</div>
+        <div style="border-top:1px dashed #334155;width:100%;margin:.2rem 0"></div>
+        <div style="color:#f59e0b">⟶ GET /admin/*</div>
+        <div style="color:#f59e0b">Basic Auth header</div>
+      </div>
+
+      <!-- SERVER -->
+      <div style="flex:1.2;min-width:210px">
+        <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:1rem">
+          <div style="color:#94a3b8;font-size:0.7rem;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.5rem">Server — single Go binary</div>
+
+          <div style="background:#0f172a;border:1px solid #f59e0b33;border-radius:6px;padding:.75rem;margin-bottom:.6rem">
+            <div style="color:#f59e0b;font-weight:bold">Sync Engine</div>
+            <div style="color:#cbd5e1;font-size:0.8rem;margin-top:.3rem">
+              ┌─ Decompress (Zstd) + CRDT merge<br>
+              ├─ Compute + compress response delta<br>
+              └─ SSE broadcast to other devices
+            </div>
+          </div>
+
+          <div style="background:#0f172a;border:1px solid #f472b633;border-radius:6px;padding:.75rem;margin-bottom:.6rem">
+            <div style="color:#f472b6;font-weight:bold">Auth Layer</div>
+            <div style="color:#cbd5e1;font-size:0.8rem;margin-top:.3rem">
+              ┌─ Device key middleware (per-device)<br>
+              ├─ JWT middleware (user identity)<br>
+              ├─ Dataset ACL<br>
+              └─ Admin Basic Auth (separate path)
+            </div>
+          </div>
+
+          <div style="background:#0f172a;border:1px solid #f59e0b55;border-radius:6px;padding:.75rem;margin-bottom:.6rem">
+            <div style="color:#f59e0b;font-weight:bold">🛠 Admin Console — Go templates</div>
+            <div style="color:#cbd5e1;font-size:0.8rem;margin-top:.3rem">
+              <span style="color:#94a3b8">/admin/devices</span> — list, revoke, wipe<br>
+              <span style="color:#94a3b8">/admin/apps</span> — manage app registrations<br>
+              <span style="color:#94a3b8">/admin/data</span> — browse datasets + docs<br>
+              <span style="color:#94a3b8">/admin/import</span> — bulk JSON import<br>
+              <span style="color:#94a3b8">/admin/sync</span> — monitor activity, op counts<br>
+              <span style="color:#94a3b8">/admin/keys</span> — rotate server DB key
+            </div>
+          </div>
+
+          <div style="background:#0f172a;border:1px solid #06b6d433;border-radius:6px;padding:.75rem">
+            <div style="color:#06b6d4;font-weight:bold">Storage — SQLCipher</div>
+            <div style="color:#cbd5e1;font-size:0.8rem;margin-top:.3rem">
+              ┌─ data.db — tenant data (SQLCipher)<br>
+              ├─ meta.db — devices, apps, auth tokens<br>
+              └─ DB keys injected via env, never on disk
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ADMIN AUTH NOTE -->
+    <div style="margin-top:1.2rem;background:#1e293b;border:1px solid #f59e0b55;border-radius:8px;padding:1rem">
+      <div style="color:#f59e0b;font-size:0.7rem;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.6rem">Admin Auth — separate from device/user auth</div>
+      <div style="display:flex;gap:2rem;flex-wrap:wrap;font-size:0.82rem;color:#cbd5e1">
+        <div>
+          Single admin password<br>
+          Stored as bcrypt hash in env var<br>
+          HTTP Basic Auth over TLS<br>
+          All <span style="color:#f59e0b">/admin/*</span> routes gated
+        </div>
+        <div>
+          No device key required<br>
+          No JWT — session cookie (server-side, short TTL)<br>
+          Rate-limited login attempts<br>
+          IP allowlist recommended (optional)
+        </div>
+        <div style="color:#64748b">
+          Ships inside the same Go binary.<br>
+          Templates embedded via go:embed.<br>
+          Zero extra deployment step.<br>
+          HTMX for dynamic UI without SPA overhead.
+        </div>
+      </div>
+    </div>
+
+    <!-- ENCRYPTION + DELTA condensed -->
+    <div style="margin-top:1rem;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;font-size:0.8rem">
+
+      <div style="background:#1e293b;border:1px solid #22c55e33;border-radius:8px;padding:.85rem">
+        <div style="color:#22c55e;font-weight:bold;margin-bottom:.4rem">🔒 Encryption</div>
+        <div style="color:#cbd5e1">
+          Transit: TLS 1.3 + pinning<br>
+          Client: SQLCipher / AES-GCM<br>
+          Server: SQLCipher + env key<br>
+          Cloud sees: encrypted blob only
+        </div>
+      </div>
+
+      <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:.85rem">
+        <div style="color:#a855f7;font-weight:bold;margin-bottom:.4rem">🔑 Identity</div>
+        <div style="color:#cbd5e1">
+          app_id → tenant<br>
+          device_id → 1 key per device<br>
+          user_id → JWT (15min TTL)<br>
+          admin → Basic Auth + session
+        </div>
+      </div>
+
+      <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:.85rem">
+        <div style="color:#06b6d4;font-weight:bold;margin-bottom:.4rem">⚡ Delta Sync</div>
+        <div style="color:#cbd5e1">
+          Local write → CRDT op log<br>
+          { clock, ops[] } → Zstd → TLS<br>
+          Server merge → SSE notify<br>
+          Compaction: log → snapshot
+        </div>
+      </div>
+
+      <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:.85rem">
+        <div style="color:#f59e0b;font-weight:bold;margin-bottom:.4rem">📦 Deployment</div>
+        <div style="color:#cbd5e1">
+          Single Go binary<br>
+          SQLite files on disk<br>
+          DB key via env var<br>
+          Any VPS / Docker / bare metal
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:1rem">Admin console added — Go templates embedded in binary, Basic Auth, HTMX. Does the full system look complete? Reply in terminal.</p>
