@@ -1,0 +1,29 @@
+{{define "devices"}}
+<table>
+  <thead>
+    <tr><th>Device Key ID</th><th>Device ID</th><th>App ID</th><th>Status</th><th>Registered</th><th>Actions</th></tr>
+  </thead>
+  <tbody>
+    {{range .Devices}}
+    <tr>
+      <td><code>{{.DeviceKeyID}}</code></td>
+      <td>{{.DeviceID}}</td>
+      <td>{{.AppID}}</td>
+      <td><span class="badge {{if eq .Status "active"}}badge-active{{else}}badge-revoked{{end}}">{{.Status}}</span></td>
+      <td>{{.RegisteredAt.Format "2006-01-02 15:04"}}</td>
+      <td>
+        {{if eq .Status "active"}}
+        <button class="btn btn-danger"
+          hx-delete="/admin/devices/{{.DeviceKeyID}}"
+          hx-confirm="Revoke this device?"
+          hx-target="closest tr"
+          hx-swap="outerHTML">Revoke</button>
+        {{end}}
+      </td>
+    </tr>
+    {{else}}
+    <tr><td colspan="6">No devices registered.</td></tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
