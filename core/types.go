@@ -19,11 +19,12 @@ type CRDTOp struct {
 
 // SyncMessage is sent client to server.
 type SyncMessage struct {
-	AppID     string   `cbor:"app_id"`
-	UserID    string   `cbor:"user_id"`
-	DatasetID string   `cbor:"dataset_id"`
-	Clock     HLC      `cbor:"clock"` // last known server HLC
-	Ops       []CRDTOp `cbor:"ops"`
+	AppID               string   `cbor:"app_id"`
+	UserID              string   `cbor:"user_id"`
+	DatasetID           string   `cbor:"dataset_id"`
+	Clock               HLC      `cbor:"clock"` // last known server HLC
+	Ops                 []CRDTOp `cbor:"ops"`
+	ClientSchemaVersion int      `cbor:"client_schema_version"`
 }
 
 // SyncResponse is sent server to client.
