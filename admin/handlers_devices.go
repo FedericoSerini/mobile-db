@@ -45,10 +45,17 @@ func (h *devicesHandler) list(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "template error: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	h.tmpl.ExecuteTemplate(w, "base", map[string]any{
+	var page strings.Builder
+	if err := h.tmpl.ExecuteTemplate(&page, "base", map[string]any{
 		"Title":   "Devices",
 		"Content": template.HTML(content.String()),
-	})
+	}); err != nil {
+		http.Error(w, "template error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(page.String()))
 }
 
 func (h *devicesHandler) revoke(w http.ResponseWriter, r *http.Request) {
