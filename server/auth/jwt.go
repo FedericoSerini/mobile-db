@@ -136,6 +136,9 @@ func (v *OIDCValidator) fetchJWKS() error {
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("jwks endpoint returned HTTP %d", resp.StatusCode)
+	}
 
 	var doc jwksDoc
 	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
@@ -152,6 +155,10 @@ func (v *OIDCValidator) fetchJWKS() error {
 			continue
 		}
 		keys[k.Kid] = pub
+	}
+
+	if len(keys) == 0 {
+		return errors.New("jwks: zero usable keys in response")
 	}
 
 	v.mu.Lock()

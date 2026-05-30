@@ -178,6 +178,62 @@ func TestOIDCValidatorAudienceCheck(t *testing.T) {
 	})
 }
 
+func serveJWKSWithStatus(t *testing.T, status int, body string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(status)
+		fmt.Fprint(w, body)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestOIDCValidatorJWKSHTTPError(t *testing.T) {
+	srv := serveJWKSWithStatus(t, http.StatusNotFound, `{"error":"Realm does not exist"}`)
+	v := auth.NewOIDCValidator(srv.URL, "test", "")
+	_, err := v.Validate("dummy")
+	if err == nil {
+		t.Fatal("non-200 JWKS response must return error")
+	}
+}
+
+func TestOIDCValidatorEmptyJWKSNotCached(t *testing.T) {
+	key := newTestRSAKey(t)
+	kid := "key-1"
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			fmt.Fprint(w, `{"keys":[]}`)
+			return
+		}
+		doc := map[string]any{
+			"keys": []map[string]any{{
+				"kid": kid,
+				"kty": "RSA",
+				"n":   base64.RawURLEncoding.EncodeToString(key.PublicKey.N.Bytes()),
+				"e":   encodeE(key.PublicKey.E),
+			}},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(doc)
+	}))
+	t.Cleanup(srv.Close)
+
+	v := auth.NewOIDCValidator(srv.URL, "test", "")
+	_, err := v.Validate("dummy")
+	if err == nil {
+		t.Fatal("empty JWKS must return error")
+	}
+	// Second call must re-fetch (not use empty cache) and succeed
+	issuer := fmt.Sprintf("%s/realms/test", srv.URL)
+	token := issueTestToken(t, key, kid, issuer, "app", "user", time.Hour)
+	_, err = v.Validate(token)
+	if err != nil {
+		t.Fatalf("after re-fetch with real keys, Validate must succeed: %v", err)
+	}
+}
+
 func TestOIDCValidatorTrailingSlash(t *testing.T) {
 	key := newTestRSAKey(t)
 	kid := "key-1"
