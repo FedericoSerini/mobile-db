@@ -20,6 +20,11 @@ type DeviceVerifier interface {
 	Verify(ctx context.Context, deviceKeyID, secret string) error
 }
 
+// TokenValidator is satisfied by *auth.OIDCValidator and test stubs.
+type TokenValidator interface {
+	Validate(tokenStr string) (*auth.OIDCClaims, error)
+}
+
 // RequireDeviceKey validates X-Device-Key: <id>:<secret> header.
 func RequireDeviceKey(svc DeviceVerifier) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -44,8 +49,9 @@ func RequireDeviceKey(svc DeviceVerifier) func(http.Handler) http.Handler {
 	}
 }
 
-// RequireJWT validates Authorization: Bearer <token> header.
-func RequireJWT(svc *auth.JWTService) func(http.Handler) http.Handler {
+// RequireJWT validates Authorization: Bearer <keycloak_token> header.
+// app_id and user_id are extracted from the Keycloak token claims.
+func RequireJWT(v TokenValidator) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			header := r.Header.Get("Authorization")
@@ -53,13 +59,13 @@ func RequireJWT(svc *auth.JWTService) func(http.Handler) http.Handler {
 				http.Error(w, "missing Authorization header", http.StatusUnauthorized)
 				return
 			}
-			claims, err := svc.Validate(strings.TrimPrefix(header, "Bearer "))
+			claims, err := v.Validate(strings.TrimPrefix(header, "Bearer "))
 			if err != nil {
 				http.Error(w, "invalid token", http.StatusUnauthorized)
 				return
 			}
 			ctx := context.WithValue(r.Context(), CtxAppID, claims.AppID)
-			ctx = context.WithValue(ctx, CtxUserID, claims.UserID)
+			ctx = context.WithValue(ctx, CtxUserID, claims.Subject)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

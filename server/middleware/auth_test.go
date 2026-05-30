@@ -2,6 +2,7 @@ package middleware_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -17,6 +18,15 @@ func (s *stubDeviceSvc) Verify(_ context.Context, _, _ string) error {
 		return nil
 	}
 	return auth.ErrInvalidSecret
+}
+
+type stubTokenValidator struct {
+	claims *auth.OIDCClaims
+	err    error
+}
+
+func (s *stubTokenValidator) Validate(_ string) (*auth.OIDCClaims, error) {
+	return s.claims, s.err
 }
 
 func okHandler(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }
@@ -42,8 +52,8 @@ func TestDeviceKeyValidHeader(t *testing.T) {
 }
 
 func TestJWTMiddlewareMissing(t *testing.T) {
-	svc := auth.NewJWTService([]byte("32-byte-secret-for-testing-1234!"))
-	h := middleware.RequireJWT(svc)(http.HandlerFunc(okHandler))
+	v := &stubTokenValidator{err: errors.New("invalid")}
+	h := middleware.RequireJWT(v)(http.HandlerFunc(okHandler))
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
 	if rr.Code != http.StatusUnauthorized {
@@ -52,14 +62,25 @@ func TestJWTMiddlewareMissing(t *testing.T) {
 }
 
 func TestJWTMiddlewareValid(t *testing.T) {
-	svc := auth.NewJWTService([]byte("32-byte-secret-for-testing-1234!"))
-	h := middleware.RequireJWT(svc)(http.HandlerFunc(okHandler))
-	token, _ := svc.Issue("app1", "user1")
+	v := &stubTokenValidator{claims: &auth.OIDCClaims{AppID: "app1"}}
+	h := middleware.RequireJWT(v)(http.HandlerFunc(okHandler))
 	req := httptest.NewRequest("GET", "/", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Authorization", "Bearer any-token")
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d", rr.Code)
+	}
+}
+
+func TestJWTMiddlewareInvalidToken(t *testing.T) {
+	v := &stubTokenValidator{err: errors.New("bad")}
+	h := middleware.RequireJWT(v)(http.HandlerFunc(okHandler))
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer bad-token")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d", rr.Code)
 	}
 }

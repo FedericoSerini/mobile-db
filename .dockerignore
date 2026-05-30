@@ -1,0 +1,9 @@
+.git/
+.claude/
+.superpowers/
+data/
+docs/
+container/
+*.dylib
+*.md
+RUN.md

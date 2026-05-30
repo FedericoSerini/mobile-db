@@ -8,10 +8,16 @@ import (
 	"github.com/federicoserini/mobile-db/server"
 )
 
+func setKeycloakEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("KEYCLOAK_URL", "https://gatekeeper.federicoserini.com")
+	t.Setenv("KEYCLOAK_REALM", "homelab")
+}
+
 func TestConfigLoadsDefaults(t *testing.T) {
 	t.Setenv("ADMIN_PASSWORD_HASH", "$2a$12$test")
-	t.Setenv("JWT_SECRET", "aaaabbbbccccddddeeeeffffgggghhhhiiii")
 	t.Setenv("DB_ENCRYPTION_KEY", "aaaabbbbccccddddeeeeffffgggghhhh")
+	setKeycloakEnv(t)
 
 	cfg, err := server.LoadConfig()
 	if err != nil {
@@ -27,8 +33,9 @@ func TestConfigLoadsDefaults(t *testing.T) {
 
 func TestConfigMissingRequiredFails(t *testing.T) {
 	os.Unsetenv("ADMIN_PASSWORD_HASH")
-	os.Unsetenv("JWT_SECRET")
 	os.Unsetenv("DB_ENCRYPTION_KEY")
+	os.Unsetenv("KEYCLOAK_URL")
+	os.Unsetenv("KEYCLOAK_REALM")
 
 	_, err := server.LoadConfig()
 	if err == nil {
@@ -36,22 +43,11 @@ func TestConfigMissingRequiredFails(t *testing.T) {
 	}
 }
 
-func TestJWTSecretTooShortFails(t *testing.T) {
-	t.Setenv("ADMIN_PASSWORD_HASH", "$2a$12$test")
-	t.Setenv("JWT_SECRET", "tooshort")
-	t.Setenv("DB_ENCRYPTION_KEY", "aaaabbbbccccddddeeeeffffgggghhhh")
-
-	_, err := server.LoadConfig()
-	if err == nil {
-		t.Fatal("LoadConfig must error when JWT_SECRET is shorter than 32 bytes")
-	}
-}
-
 func TestNegativeCompactionThresholdFails(t *testing.T) {
 	t.Setenv("ADMIN_PASSWORD_HASH", "$2a$12$test")
-	t.Setenv("JWT_SECRET", "aaaabbbbccccddddeeeeffffgggghhhhiiii")
 	t.Setenv("DB_ENCRYPTION_KEY", "aaaabbbbccccddddeeeeffffgggghhhh")
 	t.Setenv("COMPACTION_THRESHOLD", "-1")
+	setKeycloakEnv(t)
 
 	_, err := server.LoadConfig()
 	if err == nil {
@@ -61,9 +57,9 @@ func TestNegativeCompactionThresholdFails(t *testing.T) {
 
 func TestAdminAllowedIPsTrimmed(t *testing.T) {
 	t.Setenv("ADMIN_PASSWORD_HASH", "$2a$12$test")
-	t.Setenv("JWT_SECRET", "aaaabbbbccccddddeeeeffffgggghhhhiiii")
 	t.Setenv("DB_ENCRYPTION_KEY", "aaaabbbbccccddddeeeeffffgggghhhh")
 	t.Setenv("ADMIN_ALLOWED_IPS", "192.168.1.1,  192.168.1.2 , 10.0.0.1")
+	setKeycloakEnv(t)
 
 	cfg, err := server.LoadConfig()
 	if err != nil {

@@ -8,7 +8,7 @@ import (
 	"github.com/federicoserini/mobile-db/server/auth"
 )
 
-// AuthStore implements auth.AuthStore and auth.RefreshStore on top of MetaDB.
+// AuthStore implements auth.AuthStore on top of MetaDB.
 type AuthStore struct{ db *MetaDB }
 
 func NewAuthStore(db *MetaDB) *AuthStore { return &AuthStore{db: db} }
@@ -45,42 +45,5 @@ func (s *AuthStore) UpdateDeviceKey(ctx context.Context, dk auth.DeviceKey) erro
 	_, err := s.db.DB().ExecContext(ctx,
 		`UPDATE device_keys SET key_hash=?, status=?, last_seen_at=? WHERE device_key_id=?`,
 		dk.KeyHash, dk.Status, time.Now().UTC(), dk.DeviceKeyID)
-	return err
-}
-
-func (s *AuthStore) CreateRefreshToken(ctx context.Context, rt auth.RefreshToken) error {
-	_, err := s.db.DB().ExecContext(ctx,
-		`INSERT INTO refresh_tokens (token_hash, app_id, user_id, expires_at, used) VALUES (?,?,?,?,0)`,
-		rt.TokenHash, rt.AppID, rt.UserID, rt.ExpiresAt.UTC())
-	return err
-}
-
-func (s *AuthStore) GetAndInvalidateRefreshToken(ctx context.Context, hash string) (*auth.RefreshToken, error) {
-	tx, err := s.db.DB().BeginTx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
-	var rt auth.RefreshToken
-	var used int
-	err = tx.QueryRowContext(ctx,
-		`SELECT token_hash, app_id, user_id, expires_at, used FROM refresh_tokens WHERE token_hash=?`,
-		hash).Scan(&rt.TokenHash, &rt.AppID, &rt.UserID, &rt.ExpiresAt, &used)
-	if err == sql.ErrNoRows || used == 1 {
-		return nil, auth.ErrRefreshTokenInvalid
-	}
-	if err != nil {
-		return nil, err
-	}
-	if _, err := tx.ExecContext(ctx, `UPDATE refresh_tokens SET used=1 WHERE token_hash=?`, hash); err != nil {
-		return nil, err
-	}
-	rt.Used = used == 1
-	return &rt, tx.Commit()
-}
-
-func (s *AuthStore) RevokeAllForUser(ctx context.Context, appID, userID string) error {
-	_, err := s.db.DB().ExecContext(ctx,
-		`UPDATE refresh_tokens SET used=1 WHERE app_id=? AND user_id=?`, appID, userID)
 	return err
 }

@@ -8,9 +8,11 @@ import (
 )
 
 type Config struct {
-	AdminPasswordHash    string
-	JWTSecret           []byte
+	AdminPasswordHash   string
 	DBEncryptionKey     []byte
+	KeycloakURL         string
+	KeycloakRealm       string
+	KeycloakClientID    string
 	BackupDestination   string
 	BackupInterval      string
 	LogLevel            string
@@ -39,8 +41,10 @@ func LoadConfig() (*Config, error) {
 
 	cfg := &Config{
 		AdminPasswordHash: require("ADMIN_PASSWORD_HASH"),
-		JWTSecret:         []byte(require("JWT_SECRET")),
 		DBEncryptionKey:   []byte(require("DB_ENCRYPTION_KEY")),
+		KeycloakURL:       require("KEYCLOAK_URL"),
+		KeycloakRealm:     require("KEYCLOAK_REALM"),
+		KeycloakClientID:  opt("KEYCLOAK_CLIENT_ID", ""),
 		BackupDestination: opt("BACKUP_DESTINATION", ""),
 		BackupInterval:    opt("BACKUP_INTERVAL", "24h"),
 		LogLevel:          opt("LOG_LEVEL", "info"),
@@ -74,9 +78,6 @@ func LoadConfig() (*Config, error) {
 		return nil, errors.New("missing required env vars: " + strings.Join(missing, ", "))
 	}
 
-	if len(cfg.JWTSecret) < 32 {
-		return nil, errors.New("JWT_SECRET must be at least 32 bytes")
-	}
 	if len(cfg.DBEncryptionKey) < 32 {
 		return nil, errors.New("DB_ENCRYPTION_KEY must be at least 32 bytes")
 	}

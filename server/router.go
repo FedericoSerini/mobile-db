@@ -13,7 +13,7 @@ type RouterDeps struct {
 	AuthHandlers  *auth.Handlers
 	SyncHandler   *handlers.SyncHandler
 	Broadcaster   *http2.Broadcaster
-	JWTSvc        *auth.JWTService
+	OIDCValidator middleware.TokenValidator
 	DeviceSvc     *auth.DeviceService
 	AdminPassHash string
 	AdminIPs      []string
@@ -27,7 +27,7 @@ func NewRouter(d RouterDeps) http.Handler {
 	mux.HandleFunc("POST /devices/rotate-key", d.AuthHandlers.RotateKey)
 
 	deviceAuth := middleware.RequireDeviceKey(d.DeviceSvc)
-	jwtAuth := middleware.RequireJWT(d.JWTSvc)
+	jwtAuth := middleware.RequireJWT(d.OIDCValidator)
 
 	mux.Handle("DELETE /devices/", deviceAuth(http.HandlerFunc(d.AuthHandlers.RevokeDevice)))
 	mux.Handle("POST /sync", deviceAuth(jwtAuth(d.SyncHandler)))

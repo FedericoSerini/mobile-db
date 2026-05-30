@@ -13,7 +13,7 @@ import (
 
 func TestRegisterHandler(t *testing.T) {
 	svc := auth.NewDeviceService(newStubStore())
-	h := auth.NewHandlers(svc, nil, nil)
+	h := auth.NewHandlers(svc, nil)
 	body, _ := json.Marshal(map[string]string{"app_id": "app1", "device_id": "dev1"})
 	req := httptest.NewRequest("POST", "/devices/register", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -29,15 +29,14 @@ func TestRegisterHandler(t *testing.T) {
 	}
 }
 
-func TestTokenHandler(t *testing.T) {
+func TestTokenHandlerDeviceOnly(t *testing.T) {
 	store := newStubStore()
 	devSvc := auth.NewDeviceService(store)
-	jwtSvc := auth.NewJWTService([]byte("32-byte-secret-for-testing-1234!"))
-	h := auth.NewHandlers(devSvc, jwtSvc, nil)
+	h := auth.NewHandlers(devSvc, nil) // no OIDC validator
 	reg, _ := devSvc.Register(context.Background(), "app1", "dev1")
 	body, _ := json.Marshal(map[string]string{
-		"app_id": "app1", "user_id": "u1",
-		"device_key_id": reg.DeviceKeyID, "device_secret": reg.DeviceSecret,
+		"device_key_id": reg.DeviceKeyID,
+		"device_secret": reg.DeviceSecret,
 	})
 	req := httptest.NewRequest("POST", "/auth/token", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -46,9 +45,19 @@ func TestTokenHandler(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body)
 	}
-	var resp map[string]string
-	json.NewDecoder(rr.Body).Decode(&resp)
-	if resp["access_token"] == "" {
-		t.Fatal("missing access_token")
+}
+
+func TestTokenHandlerInvalidDevice(t *testing.T) {
+	h := auth.NewHandlers(auth.NewDeviceService(newStubStore()), nil)
+	body, _ := json.Marshal(map[string]string{
+		"device_key_id": "nonexistent",
+		"device_secret": "wrong",
+	})
+	req := httptest.NewRequest("POST", "/auth/token", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.Token(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d", rr.Code)
 	}
 }

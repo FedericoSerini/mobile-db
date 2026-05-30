@@ -30,7 +30,6 @@ func Run(ctx context.Context, cfg *Config, log zerolog.Logger) error {
 		return fmt.Errorf("create data dir: %w", err)
 	}
 
-	// Single SQLite file holds both metadata and op_log tables.
 	dbPath := filepath.Join(cfg.DataDir, "mobile-db.db")
 	encKey := string(cfg.DBEncryptionKey)
 
@@ -40,14 +39,12 @@ func Run(ctx context.Context, cfg *Config, log zerolog.Logger) error {
 	}
 	defer store.Close()
 
-	// Obtain a MetaDB view that shares the same connection — no double-close.
 	metaDB := store.Meta()
 
 	authStore := crsqlite.NewAuthStore(metaDB)
 	deviceSvc := auth.NewDeviceService(authStore)
-	jwtSvc := auth.NewJWTService(cfg.JWTSecret)
-	refreshSvc := auth.NewRefreshService(authStore, jwtSvc)
-	authHandlers := auth.NewHandlers(deviceSvc, jwtSvc, refreshSvc)
+	oidcValidator := auth.NewOIDCValidator(cfg.KeycloakURL, cfg.KeycloakRealm, cfg.KeycloakClientID)
+	authHandlers := auth.NewHandlers(deviceSvc, oidcValidator)
 
 	broadcaster := http2transport.NewBroadcaster()
 	clock := crdt.NewClock("server")
@@ -85,7 +82,7 @@ func Run(ctx context.Context, cfg *Config, log zerolog.Logger) error {
 		AuthHandlers:  authHandlers,
 		SyncHandler:   syncHandler,
 		Broadcaster:   broadcaster,
-		JWTSvc:        jwtSvc,
+		OIDCValidator: oidcValidator,
 		DeviceSvc:     deviceSvc,
 		AdminPassHash: cfg.AdminPasswordHash,
 		AdminIPs:      cfg.AdminAllowedIPs,

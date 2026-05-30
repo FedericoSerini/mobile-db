@@ -7,13 +7,12 @@ import (
 )
 
 type Handlers struct {
-	deviceSvc  *DeviceService
-	jwtSvc     *JWTService
-	refreshSvc *RefreshService
+	deviceSvc *DeviceService
+	oidcSvc   *OIDCValidator // nil when Keycloak not configured
 }
 
-func NewHandlers(deviceSvc *DeviceService, jwtSvc *JWTService, refreshSvc *RefreshService) *Handlers {
-	return &Handlers{deviceSvc: deviceSvc, jwtSvc: jwtSvc, refreshSvc: refreshSvc}
+func NewHandlers(deviceSvc *DeviceService, oidcSvc *OIDCValidator) *Handlers {
+	return &Handlers{deviceSvc: deviceSvc, oidcSvc: oidcSvc}
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -44,10 +43,11 @@ func (h *Handlers) Register(w http.ResponseWriter, r *http.Request) {
 }
 
 // POST /auth/token
+// Verifies the device key from the request body.
+// If Authorization: Bearer <keycloak_token> is present, validates it via Keycloak
+// and returns {app_id, user_id} extracted from the token.
 func (h *Handlers) Token(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		AppID        string `json:"app_id"`
-		UserID       string `json:"user_id"`
 		DeviceKeyID  string `json:"device_key_id"`
 		DeviceSecret string `json:"device_secret"`
 	}
@@ -59,23 +59,22 @@ func (h *Handlers) Token(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid device key", http.StatusUnauthorized)
 		return
 	}
-	token, err := h.jwtSvc.Issue(req.AppID, req.UserID)
-	if err != nil {
-		http.Error(w, "token issuance failed", http.StatusInternalServerError)
-		return
-	}
-	var refreshToken string
-	if h.refreshSvc != nil {
-		refreshToken, err = h.refreshSvc.IssueRefresh(r.Context(), req.AppID, req.UserID)
+
+	header := r.Header.Get("Authorization")
+	if strings.HasPrefix(header, "Bearer ") && h.oidcSvc != nil {
+		claims, err := h.oidcSvc.Validate(strings.TrimPrefix(header, "Bearer "))
 		if err != nil {
-			http.Error(w, "failed to issue refresh token", http.StatusInternalServerError)
+			http.Error(w, "invalid token: "+err.Error(), http.StatusUnauthorized)
 			return
 		}
+		writeJSON(w, http.StatusOK, map[string]string{
+			"app_id":  claims.AppID,
+			"user_id": claims.Subject,
+		})
+		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{
-		"access_token":  token,
-		"refresh_token": refreshToken,
-	})
+
+	w.WriteHeader(http.StatusOK)
 }
 
 // POST /devices/rotate-key
