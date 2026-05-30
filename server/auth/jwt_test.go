@@ -52,7 +52,7 @@ func serveJWKS(t *testing.T, kid string, pub *rsa.PublicKey) *httptest.Server {
 	return srv
 }
 
-func issueTestToken(t *testing.T, key *rsa.PrivateKey, kid, issuer, appID, userID string, ttl time.Duration) string {
+func issueTestToken(t *testing.T, key *rsa.PrivateKey, kid, issuer, appID, userID string, ttl time.Duration, aud ...string) string {
 	t.Helper()
 	claims := jwt.MapClaims{
 		"sub": userID,
@@ -60,6 +60,9 @@ func issueTestToken(t *testing.T, key *rsa.PrivateKey, kid, issuer, appID, userI
 		"iss": issuer,
 		"exp": time.Now().Add(ttl).Unix(),
 		"iat": time.Now().Unix(),
+	}
+	if len(aud) > 0 {
+		claims["aud"] = aud
 	}
 	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	tok.Header["kid"] = kid
@@ -130,6 +133,49 @@ func TestOIDCValidatorClientIDCheck(t *testing.T) {
 	if err == nil {
 		t.Fatal("wrong clientID must fail")
 	}
+}
+
+func TestOIDCValidatorAudienceCheck(t *testing.T) {
+	key := newTestRSAKey(t)
+	kid := "key-1"
+	srv := serveJWKS(t, kid, &key.PublicKey)
+	issuer := fmt.Sprintf("%s/realms/test", srv.URL)
+
+	t.Run("token without aud rejected when clientID set", func(t *testing.T) {
+		v := auth.NewOIDCValidator(srv.URL, "test", "my-client")
+		token := issueTestToken(t, key, kid, issuer, "my-client", "user", time.Hour)
+		_, err := v.Validate(token)
+		if err == nil {
+			t.Fatal("token without aud must be rejected when clientID is configured")
+		}
+	})
+
+	t.Run("token with wrong aud rejected", func(t *testing.T) {
+		v := auth.NewOIDCValidator(srv.URL, "test", "my-client")
+		token := issueTestToken(t, key, kid, issuer, "my-client", "user", time.Hour, "other-client")
+		_, err := v.Validate(token)
+		if err == nil {
+			t.Fatal("token with wrong aud must be rejected")
+		}
+	})
+
+	t.Run("token with correct aud accepted", func(t *testing.T) {
+		v := auth.NewOIDCValidator(srv.URL, "test", "my-client")
+		token := issueTestToken(t, key, kid, issuer, "my-client", "user", time.Hour, "my-client")
+		_, err := v.Validate(token)
+		if err != nil {
+			t.Fatalf("token with correct aud must pass: %v", err)
+		}
+	})
+
+	t.Run("no aud check when clientID empty", func(t *testing.T) {
+		v := auth.NewOIDCValidator(srv.URL, "test", "")
+		token := issueTestToken(t, key, kid, issuer, "any-app", "user", time.Hour)
+		_, err := v.Validate(token)
+		if err != nil {
+			t.Fatalf("no clientID set — aud must not be checked: %v", err)
+		}
+	})
 }
 
 func TestOIDCValidatorTrailingSlash(t *testing.T) {

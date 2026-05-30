@@ -76,6 +76,18 @@ func (v *OIDCValidator) Validate(tokenStr string) (*OIDCClaims, error) {
 	if claims.Issuer != v.issuer {
 		return nil, fmt.Errorf("unexpected issuer %q", claims.Issuer)
 	}
+	if v.clientID != "" {
+		found := false
+		for _, a := range claims.Audience {
+			if a == v.clientID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("token audience does not include %q", v.clientID)
+		}
+	}
 	if v.clientID != "" && claims.AppID != v.clientID {
 		return nil, fmt.Errorf("token not issued for client %q", v.clientID)
 	}
