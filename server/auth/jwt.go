@@ -1,6 +1,9 @@
 package auth
 
 import (
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
@@ -27,8 +30,13 @@ type OIDCClaims struct {
 type jwkKey struct {
 	Kid string `json:"kid"`
 	Kty string `json:"kty"`
-	N   string `json:"n"`
-	E   string `json:"e"`
+	// RSA
+	N string `json:"n"`
+	E string `json:"e"`
+	// EC
+	Crv string `json:"crv"`
+	X   string `json:"x"`
+	Y   string `json:"y"`
 }
 
 type jwksDoc struct {
@@ -45,7 +53,7 @@ type OIDCValidator struct {
 	clientID string // optional azp check
 
 	mu         sync.RWMutex
-	keys       map[string]*rsa.PublicKey
+	keys       map[string]crypto.PublicKey
 	fetchedAt  time.Time
 	httpClient *http.Client
 	fetchGroup singleflight.Group
@@ -57,7 +65,7 @@ func NewOIDCValidator(keycloakURL, realm, clientID string) *OIDCValidator {
 		issuer:     fmt.Sprintf("%s/realms/%s", base, realm),
 		jwksURL:    fmt.Sprintf("%s/realms/%s/protocol/openid-connect/certs", base, realm),
 		clientID:   clientID,
-		keys:       map[string]*rsa.PublicKey{},
+		keys:       map[string]crypto.PublicKey{},
 		httpClient: &http.Client{Timeout: 10 * time.Second},
 	}
 }
@@ -97,7 +105,10 @@ func (v *OIDCValidator) Validate(tokenStr string) (*OIDCClaims, error) {
 }
 
 func (v *OIDCValidator) keyFunc(t *jwt.Token) (any, error) {
-	if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
+	switch t.Method.(type) {
+	case *jwt.SigningMethodRSA, *jwt.SigningMethodECDSA:
+		// supported
+	default:
 		return nil, fmt.Errorf("unexpected signing method %v", t.Header["alg"])
 	}
 	kid, _ := t.Header["kid"].(string)
@@ -156,16 +167,25 @@ func (v *OIDCValidator) fetchJWKS() error {
 		return fmt.Errorf("decode jwks: %w", err)
 	}
 
-	keys := make(map[string]*rsa.PublicKey, len(doc.Keys))
+	keys := make(map[string]crypto.PublicKey, len(doc.Keys))
 	for _, k := range doc.Keys {
-		if k.Kty != "RSA" || k.Kid == "" {
+		if k.Kid == "" {
 			continue
 		}
-		pub, err := jwkToRSA(k)
-		if err != nil {
-			continue
+		switch k.Kty {
+		case "RSA":
+			pub, err := jwkToRSA(k)
+			if err != nil {
+				continue
+			}
+			keys[k.Kid] = pub
+		case "EC":
+			pub, err := jwkToEC(k)
+			if err != nil {
+				continue
+			}
+			keys[k.Kid] = pub
 		}
-		keys[k.Kid] = pub
 	}
 
 	if len(keys) == 0 {
@@ -193,4 +213,31 @@ func jwkToRSA(k jwkKey) (*rsa.PublicKey, error) {
 		e = e<<8 | int(b)
 	}
 	return &rsa.PublicKey{N: new(big.Int).SetBytes(nBytes), E: e}, nil
+}
+
+func jwkToEC(k jwkKey) (*ecdsa.PublicKey, error) {
+	xBytes, err := base64.RawURLEncoding.DecodeString(k.X)
+	if err != nil {
+		return nil, fmt.Errorf("decode x: %w", err)
+	}
+	yBytes, err := base64.RawURLEncoding.DecodeString(k.Y)
+	if err != nil {
+		return nil, fmt.Errorf("decode y: %w", err)
+	}
+	var curve elliptic.Curve
+	switch k.Crv {
+	case "P-256":
+		curve = elliptic.P256()
+	case "P-384":
+		curve = elliptic.P384()
+	case "P-521":
+		curve = elliptic.P521()
+	default:
+		return nil, fmt.Errorf("unsupported EC curve %q", k.Crv)
+	}
+	return &ecdsa.PublicKey{
+		Curve: curve,
+		X:     new(big.Int).SetBytes(xBytes),
+		Y:     new(big.Int).SetBytes(yBytes),
+	}, nil
 }
