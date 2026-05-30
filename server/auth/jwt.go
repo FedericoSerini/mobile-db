@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -49,9 +50,10 @@ type OIDCValidator struct {
 }
 
 func NewOIDCValidator(keycloakURL, realm, clientID string) *OIDCValidator {
+	base := strings.TrimRight(keycloakURL, "/")
 	return &OIDCValidator{
-		issuer:     fmt.Sprintf("%s/realms/%s", keycloakURL, realm),
-		jwksURL:    fmt.Sprintf("%s/realms/%s/protocol/openid-connect/certs", keycloakURL, realm),
+		issuer:     fmt.Sprintf("%s/realms/%s", base, realm),
+		jwksURL:    fmt.Sprintf("%s/realms/%s/protocol/openid-connect/certs", base, realm),
 		clientID:   clientID,
 		keys:       map[string]*rsa.PublicKey{},
 		httpClient: &http.Client{Timeout: 10 * time.Second},

@@ -131,3 +131,22 @@ func TestOIDCValidatorClientIDCheck(t *testing.T) {
 		t.Fatal("wrong clientID must fail")
 	}
 }
+
+func TestOIDCValidatorTrailingSlash(t *testing.T) {
+	key := newTestRSAKey(t)
+	kid := "key-1"
+	srv := serveJWKS(t, kid, &key.PublicKey)
+
+	// URL with trailing slash — must behave identically to without
+	v := auth.NewOIDCValidator(srv.URL+"/", "test", "")
+	issuer := fmt.Sprintf("%s/realms/test", srv.URL) // no double slash
+	token := issueTestToken(t, key, kid, issuer, "my-app", "user42", time.Hour)
+
+	claims, err := v.Validate(token)
+	if err != nil {
+		t.Fatalf("trailing slash must not break validation: %v", err)
+	}
+	if claims.Subject != "user42" {
+		t.Fatalf("unexpected subject: %s", claims.Subject)
+	}
+}
