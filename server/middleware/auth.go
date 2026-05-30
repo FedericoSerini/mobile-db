@@ -64,6 +64,10 @@ func RequireJWT(v TokenValidator) func(http.Handler) http.Handler {
 				http.Error(w, "invalid token", http.StatusUnauthorized)
 				return
 			}
+			if claims.AppID == "" {
+				http.Error(w, "token missing azp claim", http.StatusUnauthorized)
+				return
+			}
 			ctx := context.WithValue(r.Context(), CtxAppID, claims.AppID)
 			ctx = context.WithValue(ctx, CtxUserID, claims.Subject)
 			next.ServeHTTP(w, r.WithContext(ctx))

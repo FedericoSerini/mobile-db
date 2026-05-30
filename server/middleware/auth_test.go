@@ -84,3 +84,16 @@ func TestJWTMiddlewareInvalidToken(t *testing.T) {
 		t.Fatalf("want 401, got %d", rr.Code)
 	}
 }
+
+func TestJWTMiddlewareEmptyAppID(t *testing.T) {
+	// Validator returns valid claims but AppID is empty (azp absent from token)
+	v := &stubTokenValidator{claims: &auth.OIDCClaims{AppID: ""}}
+	h := middleware.RequireJWT(v)(http.HandlerFunc(okHandler))
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer any-token")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401 for empty app_id, got %d", rr.Code)
+	}
+}
