@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/sync/singleflight"
 )
 
 // OIDCClaims are extracted from a Keycloak access token.
@@ -47,6 +48,7 @@ type OIDCValidator struct {
 	keys       map[string]*rsa.PublicKey
 	fetchedAt  time.Time
 	httpClient *http.Client
+	fetchGroup singleflight.Group
 }
 
 func NewOIDCValidator(keycloakURL, realm, clientID string) *OIDCValidator {
@@ -107,7 +109,13 @@ func (v *OIDCValidator) keyFunc(t *jwt.Token) (any, error) {
 		return key, nil
 	}
 
-	// Unknown kid — force one refresh then retry.
+	// Unknown kid: skip re-fetch if we refreshed within the last 5 seconds.
+	v.mu.RLock()
+	recentFetch := time.Since(v.fetchedAt) < 5*time.Second
+	v.mu.RUnlock()
+	if recentFetch {
+		return nil, fmt.Errorf("unknown kid %q", kid)
+	}
 	if err := v.fetchJWKS(); err != nil {
 		return nil, fmt.Errorf("jwks refresh: %w", err)
 	}
@@ -127,7 +135,10 @@ func (v *OIDCValidator) refreshIfStale() error {
 	if !stale {
 		return nil
 	}
-	return v.fetchJWKS()
+	_, err, _ := v.fetchGroup.Do("jwks", func() (any, error) {
+		return nil, v.fetchJWKS()
+	})
+	return err
 }
 
 func (v *OIDCValidator) fetchJWKS() error {

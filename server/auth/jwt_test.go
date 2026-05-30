@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -250,5 +251,50 @@ func TestOIDCValidatorTrailingSlash(t *testing.T) {
 	}
 	if claims.Subject != "user42" {
 		t.Fatalf("unexpected subject: %s", claims.Subject)
+	}
+}
+
+func TestOIDCValidatorSingleFlight(t *testing.T) {
+	key := newTestRSAKey(t)
+	kid := "key-1"
+	var fetchCount int
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		fetchCount++
+		mu.Unlock()
+		doc := map[string]any{
+			"keys": []map[string]any{{
+				"kid": kid,
+				"kty": "RSA",
+				"n":   base64.RawURLEncoding.EncodeToString(key.PublicKey.N.Bytes()),
+				"e":   encodeE(key.PublicKey.E),
+			}},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(doc)
+	}))
+	t.Cleanup(srv.Close)
+
+	v := auth.NewOIDCValidator(srv.URL, "test", "")
+	issuer := fmt.Sprintf("%s/realms/test", srv.URL)
+	token := issueTestToken(t, key, kid, issuer, "app", "user", time.Hour)
+
+	var wg sync.WaitGroup
+	const concurrency = 20
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			v.Validate(token) //nolint:errcheck
+		}()
+	}
+	wg.Wait()
+
+	mu.Lock()
+	count := fetchCount
+	mu.Unlock()
+	if count > 2 {
+		t.Fatalf("expected ≤2 JWKS fetches for %d concurrent Validates, got %d", concurrency, count)
 	}
 }
