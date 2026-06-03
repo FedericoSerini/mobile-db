@@ -30,6 +30,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       unzip \
     && rm -rf /var/lib/apt/lists/*
 
+RUN mkdir -p /app
+
 # Download the cr-sqlite shared extension for the target architecture.
 RUN set -eux; \
     case "${TARGETARCH}" in \
