@@ -181,6 +181,7 @@ ORDER BY ts_wall ASC, ts_logic ASC, device_id ASC`, tbl)
 		); err != nil {
 			return nil, fmt.Errorf("scan op: %w", err)
 		}
+		op.Timestamp.DeviceID = op.DeviceID
 		if err := json.Unmarshal([]byte(valueJSON), &op.Value); err != nil {
 			return nil, fmt.Errorf("unmarshal value for op %s: %w", op.OpID, err)
 		}

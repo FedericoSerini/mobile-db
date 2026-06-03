@@ -63,6 +63,8 @@ func SSEHandler(b *Broadcaster, appID, userID string) http.HandlerFunc {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
+		w.WriteHeader(http.StatusOK)
+		flusher.Flush()
 
 		ch := b.Subscribe(appID, userID)
 		defer b.Unsubscribe(appID, userID, ch)
