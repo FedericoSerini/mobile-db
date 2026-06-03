@@ -1,17 +1,31 @@
 package cbor
 
 import (
+	"reflect"
+
 	gocbor "github.com/fxamacker/cbor/v2"
 )
 
-type Codec struct{}
+var stringMapType = reflect.TypeOf(map[string]interface{}{})
 
-func NewCodec() *Codec { return &Codec{} }
+type Codec struct {
+	dm gocbor.DecMode
+}
+
+func NewCodec() *Codec {
+	dm, err := gocbor.DecOptions{
+		DefaultMapType: stringMapType,
+	}.DecMode()
+	if err != nil {
+		panic(err)
+	}
+	return &Codec{dm: dm}
+}
 
 func (c *Codec) Encode(v any) ([]byte, error) {
 	return gocbor.Marshal(v)
 }
 
 func (c *Codec) Decode(data []byte, v any) error {
-	return gocbor.Unmarshal(data, v)
+	return c.dm.Unmarshal(data, v)
 }

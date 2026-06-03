@@ -17,6 +17,12 @@ func (rw *responseWriter) WriteHeader(code int) {
 	rw.ResponseWriter.WriteHeader(code)
 }
 
+func (rw *responseWriter) Flush() {
+	if f, ok := rw.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 // RequestLogger logs every request as structured JSON.
 func RequestLogger(log zerolog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
