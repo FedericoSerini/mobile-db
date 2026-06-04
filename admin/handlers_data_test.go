@@ -51,3 +51,66 @@ func TestDataPageRenders(t *testing.T) {
 		t.Fatal("page must contain dataset names")
 	}
 }
+
+func TestDocsPartialReturnsFragment(t *testing.T) {
+	store := &stubDataStore{}
+	tmpl, _ := admin.LoadTemplates()
+	h := admin.NewDataHandler(store, tmpl)
+
+	req := httptest.NewRequest("GET", "/admin/data/docs?app_id=app1&dataset_id=ds1", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rr.Code)
+	}
+	body := rr.Body.String()
+	// Must be a fragment — no full HTML boilerplate
+	if strings.Contains(body, "<!DOCTYPE") {
+		t.Error("docs partial must not return a full HTML page")
+	}
+	if !strings.Contains(body, "doc1") {
+		t.Error("docs partial must contain doc_id")
+	}
+	if !strings.Contains(body, "user-1") {
+		t.Error("docs partial must contain user_id")
+	}
+}
+
+func TestDocModalReturnsFragment(t *testing.T) {
+	store := &stubDataStore{}
+	tmpl, _ := admin.LoadTemplates()
+	h := admin.NewDataHandler(store, tmpl)
+
+	req := httptest.NewRequest("GET", "/admin/data/doc?dataset_id=ds1&user_id=user-1&doc_id=doc1", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rr.Code)
+	}
+	body := rr.Body.String()
+	if strings.Contains(body, "<!DOCTYPE") {
+		t.Error("doc modal must not return a full HTML page")
+	}
+	if !strings.Contains(body, `{"name":"Alice"}`) {
+		t.Error("doc modal must contain full data JSON")
+	}
+}
+
+func TestDeleteDocReturnsRow(t *testing.T) {
+	store := &stubDataStore{}
+	tmpl, _ := admin.LoadTemplates()
+	h := admin.NewDataHandler(store, tmpl)
+
+	req := httptest.NewRequest("DELETE", "/admin/data/doc?dataset_id=ds1&user_id=user-1&doc_id=doc1", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "<tr") {
+		t.Error("deleteDoc must return a <tr> element for htmx swap")
+	}
+}

@@ -9,5 +9,14 @@ import (
 var templateFS embed.FS
 
 func LoadTemplates() (*template.Template, error) {
-	return template.ParseFS(templateFS, "templates/*.html")
+	funcs := template.FuncMap{
+		"truncate": func(s string, n int) string {
+			runes := []rune(s)
+			if len(runes) <= n {
+				return s
+			}
+			return string(runes[:n]) + "…"
+		},
+	}
+	return template.New("").Funcs(funcs).ParseFS(templateFS, "templates/*.html")
 }
