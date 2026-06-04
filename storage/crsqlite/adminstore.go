@@ -79,15 +79,19 @@ func (s *AdminDeviceStore) RevokeDevice(ctx context.Context, deviceKeyID string)
 	return nil
 }
 
-// AdminDataStore implements admin.DataAdminStore on top of Backend.
-// Since Backend uses a single SQLite file containing both metadata and op_log
-// tables, datasets and docs are queried from the same connection.
-type AdminDataStore struct{ b *Backend }
+// AdminDataStore implements admin.DataAdminStore on top of a raw *sql.DB.
+type AdminDataStore struct{ db *sql.DB }
 
-func NewAdminDataStore(b *Backend) *AdminDataStore { return &AdminDataStore{b: b} }
+func NewAdminDataStore(b *Backend) *AdminDataStore {
+	return &AdminDataStore{db: b.DB()}
+}
+
+func NewAdminDataStoreFromDB(db *sql.DB) *AdminDataStore {
+	return &AdminDataStore{db: db}
+}
 
 func (s *AdminDataStore) ListDatasets(ctx context.Context, appID string) ([]string, error) {
-	rows, err := s.b.DB().QueryContext(ctx,
+	rows, err := s.db.QueryContext(ctx,
 		`SELECT dataset_id FROM datasets WHERE app_id=?`, appID)
 	if err != nil {
 		return nil, err
@@ -102,25 +106,62 @@ func (s *AdminDataStore) ListDatasets(ctx context.Context, appID string) ([]stri
 	return datasets, rows.Err()
 }
 
-func (s *AdminDataStore) ListDocs(ctx context.Context, appID, datasetID string) ([]map[string]any, error) {
-	rows, err := s.b.DB().QueryContext(ctx,
-		`SELECT doc_id, data FROM snapshots WHERE dataset_id=?`, datasetID)
+// ListDocs returns documents from snapshots for a given dataset.
+// userID filters by user when non-empty.
+func (s *AdminDataStore) ListDocs(ctx context.Context, appID, datasetID, userID string) ([]map[string]any, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT doc_id, user_id, data, device_id, created_at, wall_time
+		 FROM snapshots
+		 WHERE dataset_id=? AND (?='' OR user_id=?)
+		 ORDER BY created_at DESC`,
+		datasetID, userID, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var docs []map[string]any
 	for rows.Next() {
-		var docID, data string
-		rows.Scan(&docID, &data)
-		docs = append(docs, map[string]any{"doc_id": docID, "data": data})
+		var docID, uid, data, deviceID, createdAt string
+		var wallTime int64
+		rows.Scan(&docID, &uid, &data, &deviceID, &createdAt, &wallTime)
+		docs = append(docs, map[string]any{
+			"doc_id":     docID,
+			"user_id":    uid,
+			"data":       data,
+			"device_id":  deviceID,
+			"created_at": createdAt,
+			"wall_time":  wallTime,
+		})
 	}
 	return docs, rows.Err()
 }
 
-func (s *AdminDataStore) DeleteDoc(ctx context.Context, appID, datasetID, docID string) error {
-	_, err := s.b.DB().ExecContext(ctx,
-		`DELETE FROM snapshots WHERE dataset_id=? AND doc_id=?`, datasetID, docID)
+// GetDoc fetches a single document by its full primary key.
+func (s *AdminDataStore) GetDoc(ctx context.Context, datasetID, userID, docID string) (map[string]any, error) {
+	var data, deviceID, createdAt string
+	var wallTime int64
+	err := s.db.QueryRowContext(ctx,
+		`SELECT data, device_id, created_at, wall_time
+		 FROM snapshots WHERE dataset_id=? AND user_id=? AND doc_id=?`,
+		datasetID, userID, docID).Scan(&data, &deviceID, &createdAt, &wallTime)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"doc_id":     docID,
+		"user_id":    userID,
+		"data":       data,
+		"device_id":  deviceID,
+		"created_at": createdAt,
+		"wall_time":  wallTime,
+	}, nil
+}
+
+// DeleteDoc deletes a document scoped to its full primary key (dataset_id, user_id, doc_id).
+func (s *AdminDataStore) DeleteDoc(ctx context.Context, datasetID, userID, docID string) error {
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM snapshots WHERE dataset_id=? AND user_id=? AND doc_id=?`,
+		datasetID, userID, docID)
 	return err
 }
 

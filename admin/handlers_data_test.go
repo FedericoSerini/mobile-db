@@ -15,8 +15,25 @@ type stubDataStore struct{ datasets []string }
 func (s *stubDataStore) ListDatasets(_ context.Context, _ string) ([]string, error) {
 	return s.datasets, nil
 }
-func (s *stubDataStore) ListDocs(_ context.Context, _, _ string) ([]map[string]any, error) {
-	return []map[string]any{{"doc_id": "doc1", "data": `{"name":"Alice"}`}}, nil
+func (s *stubDataStore) ListDocs(_ context.Context, _, _, _ string) ([]map[string]any, error) {
+	return []map[string]any{{
+		"doc_id":     "doc1",
+		"user_id":    "user-1",
+		"data":       `{"name":"Alice"}`,
+		"device_id":  "dev-1",
+		"created_at": "2026-06-01 10:00:00",
+		"wall_time":  int64(0),
+	}}, nil
+}
+func (s *stubDataStore) GetDoc(_ context.Context, _, _, _ string) (map[string]any, error) {
+	return map[string]any{
+		"doc_id":     "doc1",
+		"user_id":    "user-1",
+		"data":       `{"name":"Alice"}`,
+		"device_id":  "dev-1",
+		"created_at": "2026-06-01",
+		"wall_time":  int64(0),
+	}, nil
 }
 func (s *stubDataStore) DeleteDoc(_ context.Context, _, _, _ string) error { return nil }
 

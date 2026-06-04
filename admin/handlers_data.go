@@ -9,8 +9,9 @@ import (
 
 type DataAdminStore interface {
 	ListDatasets(ctx context.Context, appID string) ([]string, error)
-	ListDocs(ctx context.Context, appID, datasetID string) ([]map[string]any, error)
-	DeleteDoc(ctx context.Context, appID, datasetID, docID string) error
+	ListDocs(ctx context.Context, appID, datasetID, userID string) ([]map[string]any, error)
+	GetDoc(ctx context.Context, datasetID, userID, docID string) (map[string]any, error)
+	DeleteDoc(ctx context.Context, datasetID, userID, docID string) error
 }
 
 type dataHandler struct {
@@ -47,8 +48,9 @@ func (h *dataHandler) browse(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if appID != "" && datasetID != "" {
+		userID := r.URL.Query().Get("user_id")
 		var err error
-		docs, err = h.store.ListDocs(r.Context(), appID, datasetID)
+		docs, err = h.store.ListDocs(r.Context(), appID, datasetID, userID)
 		if err != nil {
 			http.Error(w, "failed to list docs: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -78,12 +80,12 @@ func (h *dataHandler) browse(w http.ResponseWriter, r *http.Request) {
 
 func (h *dataHandler) deleteDoc(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	appID, datasetID, docID := q.Get("app_id"), q.Get("dataset_id"), q.Get("doc_id")
-	if appID == "" || datasetID == "" || docID == "" {
+	datasetID, userID, docID := q.Get("dataset_id"), q.Get("user_id"), q.Get("doc_id")
+	if datasetID == "" || userID == "" || docID == "" {
 		http.Error(w, "missing query params", http.StatusBadRequest)
 		return
 	}
-	if err := h.store.DeleteDoc(r.Context(), appID, datasetID, docID); err != nil {
+	if err := h.store.DeleteDoc(r.Context(), datasetID, userID, docID); err != nil {
 		http.Error(w, "delete failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
