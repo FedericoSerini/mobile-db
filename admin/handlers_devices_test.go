@@ -52,6 +52,35 @@ func (s *stubDeviceStore) RevokeDevice(_ context.Context, id string) error {
 	return auth.ErrDeviceNotFound
 }
 
+func TestDevicesTabStrip(t *testing.T) {
+	store := &stubDeviceStore{
+		devices: []auth.DeviceKey{
+			{DeviceKeyID: "dk1", DeviceID: "phone-1", AppID: "app1", Status: "active", RegisteredAt: time.Now()},
+			{DeviceKeyID: "dk2", DeviceID: "phone-2", AppID: "app1", Status: "revoked", RegisteredAt: time.Now()},
+		},
+	}
+	tmpl, _ := admin.LoadTemplates()
+	h := admin.NewDevicesHandler(store, tmpl)
+
+	// Active tab should only show active devices
+	req := httptest.NewRequest("GET", "/admin/devices?status=active", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "phone-1") {
+		t.Error("active tab must show active device")
+	}
+	if strings.Contains(body, "phone-2") {
+		t.Error("active tab must not show revoked device")
+	}
+	if !strings.Contains(body, "Active") {
+		t.Error("page must contain tab labels")
+	}
+}
+
 func TestDevicesPageRenders(t *testing.T) {
 	store := &stubDeviceStore{
 		devices: []auth.DeviceKey{

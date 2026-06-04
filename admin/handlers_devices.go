@@ -36,13 +36,27 @@ func (h *devicesHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *devicesHandler) list(w http.ResponseWriter, r *http.Request) {
-	devices, err := h.store.ListDevices(r.Context(), "")
+	status := r.URL.Query().Get("status") // "", "active", "revoked"
+
+	devices, err := h.store.ListDevices(r.Context(), status)
 	if err != nil {
 		http.Error(w, "failed to list devices", http.StatusInternalServerError)
 		return
 	}
+	all, active, revoked, err := h.store.DeviceCounts(r.Context())
+	if err != nil {
+		http.Error(w, "failed to count devices", http.StatusInternalServerError)
+		return
+	}
+
 	var content strings.Builder
-	if err := h.tmpl.ExecuteTemplate(&content, "devices", map[string]any{"Devices": devices}); err != nil {
+	if err := h.tmpl.ExecuteTemplate(&content, "devices", map[string]any{
+		"Devices":      devices,
+		"ActiveTab":    status,
+		"CountAll":     all,
+		"CountActive":  active,
+		"CountRevoked": revoked,
+	}); err != nil {
 		http.Error(w, "template error: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -70,6 +84,11 @@ func (h *devicesHandler) revoke(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "revoke failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`<tr><td colspan="6" style="color:#888">Revoked</td></tr>`))
+	w.Write([]byte(`<tr style="opacity:0.5">
+		<td><code>` + deviceKeyID + `</code></td>
+		<td colspan="4" style="color:#6b7280">—</td>
+		<td><span class="badge badge-revoked">revoked</span></td>
+	</tr>`))
 }

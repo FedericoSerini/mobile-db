@@ -1,7 +1,33 @@
 {{define "devices"}}
+<div style="display:flex;gap:0;margin-bottom:1.5rem;border-bottom:2px solid #dee2e6">
+  {{$tab := .ActiveTab}}
+  <a href="/admin/devices"
+     style="padding:0.5rem 1.25rem;text-decoration:none;font-size:0.875rem;font-weight:600;
+            {{if eq $tab ""}}color:#3b82f6;border-bottom:2px solid #3b82f6;margin-bottom:-2px;{{else}}color:#6b7280;{{end}}">
+    All ({{.CountAll}})
+  </a>
+  <a href="/admin/devices?status=active"
+     style="padding:0.5rem 1.25rem;text-decoration:none;font-size:0.875rem;font-weight:600;
+            {{if eq $tab "active"}}color:#3b82f6;border-bottom:2px solid #3b82f6;margin-bottom:-2px;{{else}}color:#6b7280;{{end}}">
+    Active ({{.CountActive}})
+  </a>
+  <a href="/admin/devices?status=revoked"
+     style="padding:0.5rem 1.25rem;text-decoration:none;font-size:0.875rem;font-weight:600;
+            {{if eq $tab "revoked"}}color:#3b82f6;border-bottom:2px solid #3b82f6;margin-bottom:-2px;{{else}}color:#6b7280;{{end}}">
+    Revoked ({{.CountRevoked}})
+  </a>
+</div>
+
 <table>
   <thead>
-    <tr><th>Device Key ID</th><th>Device ID</th><th>App ID</th><th>Status</th><th>Registered</th><th>Actions</th></tr>
+    <tr>
+      <th>Device Key ID</th>
+      <th>Device ID</th>
+      <th>App ID</th>
+      <th>Status</th>
+      <th>Registered</th>
+      <th>Actions</th>
+    </tr>
   </thead>
   <tbody>
     {{range .Devices}}
@@ -9,7 +35,11 @@
       <td><code>{{.DeviceKeyID}}</code></td>
       <td>{{.DeviceID}}</td>
       <td>{{.AppID}}</td>
-      <td><span class="badge {{if eq .Status "active"}}badge-active{{else}}badge-revoked{{end}}">{{.Status}}</span></td>
+      <td>
+        <span class="badge {{if eq .Status "active"}}badge-active{{else}}badge-revoked{{end}}">
+          {{.Status}}
+        </span>
+      </td>
       <td>{{.RegisteredAt.Format "2006-01-02 15:04"}}</td>
       <td>
         {{if eq .Status "active"}}
@@ -22,7 +52,7 @@
       </td>
     </tr>
     {{else}}
-    <tr><td colspan="6">No devices registered.</td></tr>
+    <tr><td colspan="6" style="color:#6b7280;text-align:center;padding:1.5rem">No devices.</td></tr>
     {{end}}
   </tbody>
 </table>
