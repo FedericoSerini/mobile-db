@@ -21,12 +21,44 @@ func TestSyncEventsTableCreated(t *testing.T) {
 	if err := crsqlite.ApplyMetaDDL(context.Background(), db); err != nil {
 		t.Fatalf("ApplyMetaDDL: %v", err)
 	}
-	// table must exist
+
+	// Table must exist
 	var name string
-	err = db.QueryRowContext(context.Background(),
-		`SELECT name FROM sqlite_master WHERE type='table' AND name='sync_events'`).Scan(&name)
-	if err != nil {
+	if err := db.QueryRowContext(context.Background(),
+		`SELECT name FROM sqlite_master WHERE type='table' AND name='sync_events'`).Scan(&name); err != nil {
 		t.Fatalf("sync_events table not found: %v", err)
+	}
+
+	// Verify columns
+	rows, err := db.QueryContext(context.Background(), `PRAGMA table_info('sync_events')`)
+	if err != nil {
+		t.Fatalf("PRAGMA table_info: %v", err)
+	}
+	defer rows.Close()
+	want := map[string]bool{
+		"id": false, "app_id": false, "dataset_id": false,
+		"user_id": false, "device_key_id": false, "op_count": false, "synced_at": false,
+	}
+	for rows.Next() {
+		var cid int
+		var colName, colType string
+		var notNull int
+		var dfltValue sql.NullString
+		var pk int
+		rows.Scan(&cid, &colName, &colType, &notNull, &dfltValue, &pk)
+		want[colName] = true
+	}
+	for col, found := range want {
+		if !found {
+			t.Errorf("missing column %q in sync_events", col)
+		}
+	}
+
+	// Index must exist
+	var idxName string
+	if err := db.QueryRowContext(context.Background(),
+		`SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='sync_events' AND name='idx_sync_events_app'`).Scan(&idxName); err != nil {
+		t.Fatalf("idx_sync_events_app index not found: %v", err)
 	}
 }
 

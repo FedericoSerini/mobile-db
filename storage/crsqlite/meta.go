@@ -56,10 +56,7 @@ CREATE INDEX IF NOT EXISTS idx_sync_events_app ON sync_events(app_id, synced_at 
 
 // EnsureMeta creates the metadata table if it does not exist.
 func EnsureMeta(ctx context.Context, db *sql.DB) error {
-	if err := ApplyMetaDDL(ctx, db); err != nil {
-		return fmt.Errorf("ensure meta table: %w", err)
-	}
-	return nil
+	return ApplyMetaDDL(ctx, db)
 }
 
 // GetSchemaVersion returns the schema version for (appID, datasetID).
