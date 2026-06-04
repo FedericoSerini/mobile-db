@@ -61,6 +61,13 @@ func (h *dataHandler) browse(w http.ResponseWriter, r *http.Request) {
 func (h *dataHandler) docsPartial(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	appID, datasetID, userID := q.Get("app_id"), q.Get("dataset_id"), q.Get("user_id")
+	if datasetID == "" {
+		// Return empty table placeholder — no dataset selected yet
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`<p style="color:#6b7280;text-align:center;padding:2rem 0">Select a dataset to browse documents.</p>`))
+		return
+	}
 	docs, err := h.store.ListDocs(r.Context(), appID, datasetID, userID)
 	if err != nil {
 		http.Error(w, "failed to list docs: "+err.Error(), http.StatusInternalServerError)
@@ -92,6 +99,11 @@ func (h *dataHandler) docModal(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "doc not found: "+err.Error(), http.StatusNotFound)
 		return
+	}
+	// Wrap raw data as template.HTML so it renders unescaped inside <pre>.
+	// This is an admin-only endpoint; the data is stored user JSON, not attacker HTML.
+	if raw, ok := doc["data"].(string); ok {
+		doc["data"] = template.HTML(raw)
 	}
 	var buf strings.Builder
 	if err := h.tmpl.ExecuteTemplate(&buf, "data_doc_modal", doc); err != nil {

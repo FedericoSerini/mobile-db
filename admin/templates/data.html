@@ -1,36 +1,121 @@
 {{define "data"}}
-<form method="get" action="/admin/data" style="margin-bottom:1rem">
-  <label>App ID: <input name="app_id" value="{{.AppID}}" required></label>
+<style>
+@keyframes fadeRow { to { opacity:0; height:0; padding:0; border:none; } }
+.row-deleted { animation: fadeRow 0.6s ease forwards 0.3s; }
+</style>
+
+<form method="get" action="/admin/data" style="display:flex;gap:0.5rem;align-items:flex-end;margin-bottom:1.5rem;flex-wrap:wrap">
+  <div>
+    <div style="font-size:0.75rem;font-weight:600;color:#6b7280;margin-bottom:0.3rem;text-transform:uppercase;letter-spacing:0.05em">App ID</div>
+    <input name="app_id" value="{{.AppID}}" required
+           style="padding:0.4rem 0.7rem;border:1px solid #d1d5db;border-radius:4px;font-size:0.875rem;width:240px">
+  </div>
   <button class="btn btn-primary" type="submit">Load</button>
 </form>
+
 {{if .Datasets}}
-<label>Dataset:
-  <select hx-get="/admin/data/docs" hx-target="#docs-table"
-          hx-vals='{"app_id":"{{.AppID}}"}' name="dataset_id">
-    <option value="">— choose —</option>
-    {{range .Datasets}}<option value="{{.}}">{{.}}</option>{{end}}
-  </select>
-</label>
-{{end}}
-<div id="docs-table">
-  {{if .Docs}}
-  <table>
-    <thead><tr><th>Doc ID</th><th>Data</th><th></th></tr></thead>
-    <tbody>
-      {{range .Docs}}
-      <tr>
-        <td><code>{{index . "doc_id"}}</code></td>
-        <td><pre style="margin:0;font-size:0.8rem">{{index . "data"}}</pre></td>
-        <td>
-          <button class="btn btn-danger"
-            hx-delete="/admin/data/doc?app_id={{$.AppID}}&dataset_id={{$.DatasetID}}&doc_id={{index . "doc_id"}}"
-            hx-confirm="Delete this document?"
-            hx-target="closest tr" hx-swap="outerHTML">Delete</button>
-        </td>
-      </tr>
-      {{end}}
-    </tbody>
-  </table>
-  {{end}}
+<div style="display:flex;gap:0.75rem;align-items:flex-end;margin-bottom:1.25rem;flex-wrap:wrap">
+  <div>
+    <div style="font-size:0.75rem;font-weight:600;color:#6b7280;margin-bottom:0.3rem;text-transform:uppercase;letter-spacing:0.05em">Dataset</div>
+    <select name="dataset_id"
+            hx-get="/admin/data/docs"
+            hx-target="#docs-table"
+            hx-include="[name='app_id'],[name='user_id']"
+            style="padding:0.4rem 0.7rem;border:1px solid #d1d5db;border-radius:4px;font-size:0.875rem;width:200px">
+      <option value="">— choose —</option>
+      {{range .Datasets}}<option value="{{.}}">{{.}}</option>{{end}}
+    </select>
+  </div>
+  <div>
+    <div style="font-size:0.75rem;font-weight:600;color:#6b7280;margin-bottom:0.3rem;text-transform:uppercase;letter-spacing:0.05em">User ID (optional)</div>
+    <input name="user_id" placeholder="filter by user…"
+           style="padding:0.4rem 0.7rem;border:1px solid #d1d5db;border-radius:4px;font-size:0.875rem;width:200px">
+  </div>
 </div>
+{{end}}
+
+<div id="docs-table"></div>
+
+<!-- Modal backdrop -->
+<div id="doc-modal"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:100;align-items:center;justify-content:center"
+     onclick="if(event.target===this)this.style.display='none'">
+  <div style="background:white;border-radius:8px;padding:1.5rem;max-width:640px;width:92%;max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.2)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <strong style="font-size:1rem;color:#111">Document Detail</strong>
+      <button onclick="document.getElementById('doc-modal').style.display='none'"
+              style="background:none;border:none;cursor:pointer;font-size:1.25rem;color:#6b7280;line-height:1">&#x2715;</button>
+    </div>
+    <div id="doc-modal-content"></div>
+  </div>
+</div>
+{{end}}
+
+
+{{define "data_docs"}}
+<style>
+@keyframes fadeRow { to { opacity:0; height:0; padding:0; border:none; } }
+.row-deleted { animation: fadeRow 0.6s ease forwards 0.3s; }
+</style>
+{{if .Docs}}
+<table>
+  <thead>
+    <tr>
+      <th>Doc ID</th>
+      <th>User ID</th>
+      <th>Data</th>
+      <th>Device</th>
+      <th>Created</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {{$datasetID := .DatasetID}}
+    {{range .Docs}}
+    <tr>
+      <td>
+        <a href="#"
+           style="color:#3b82f6;text-decoration:none;font-family:monospace;font-size:0.85rem"
+           hx-get="/admin/data/doc?dataset_id={{$datasetID}}&user_id={{index . "user_id"}}&doc_id={{index . "doc_id"}}"
+           hx-target="#doc-modal-content"
+           hx-on::after-request="document.getElementById('doc-modal').style.display='flex'">
+          {{index . "doc_id"}}
+        </a>
+      </td>
+      <td style="color:#6b7280;font-size:0.85rem">{{index . "user_id"}}</td>
+      <td><code style="font-size:0.8rem;color:#1e40af;background:#eff6ff;padding:0.15rem 0.35rem;border-radius:3px">{{truncate (index . "data") 60}}</code></td>
+      <td style="color:#6b7280;font-size:0.85rem">{{index . "device_id"}}</td>
+      <td style="color:#6b7280;font-size:0.85rem;white-space:nowrap">{{index . "created_at"}}</td>
+      <td>
+        <button class="btn btn-danger"
+          hx-delete="/admin/data/doc?dataset_id={{$datasetID}}&user_id={{index . "user_id"}}&doc_id={{index . "doc_id"}}"
+          hx-confirm="Delete this document?"
+          hx-target="closest tr"
+          hx-swap="outerHTML">Delete</button>
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{else}}
+<p style="color:#6b7280;text-align:center;padding:2rem 0">No documents in this dataset.</p>
+{{end}}
+{{end}}
+
+
+{{define "data_doc_modal"}}
+<div style="display:grid;grid-template-columns:auto 1fr;gap:0.25rem 0.75rem;font-size:0.82rem;color:#374151;margin-bottom:1rem">
+  <span style="font-weight:600;color:#6b7280">Doc ID</span>
+  <code style="font-size:0.82rem;color:#111">{{index . "doc_id"}}</code>
+  <span style="font-weight:600;color:#6b7280">User</span>
+  <span>{{index . "user_id"}}</span>
+  <span style="font-weight:600;color:#6b7280">Device</span>
+  <span>{{index . "device_id"}}</span>
+  <span style="font-weight:600;color:#6b7280">Created</span>
+  <span>{{index . "created_at"}}</span>
+  <span style="font-weight:600;color:#6b7280">Wall time</span>
+  <span style="font-family:monospace">{{index . "wall_time"}}</span>
+</div>
+<div style="font-size:0.75rem;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.4rem">Data</div>
+<pre style="margin:0;font-size:0.82rem;line-height:1.6;background:#eff6ff;color:#1e40af;padding:1rem;border-radius:6px;overflow-x:auto;white-space:pre-wrap;word-break:break-word">{{index . "data"}}</pre>
 {{end}}
