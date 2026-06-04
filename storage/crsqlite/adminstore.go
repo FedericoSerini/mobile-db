@@ -2,6 +2,7 @@ package crsqlite
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"github.com/federicoserini/mobile-db/admin"
@@ -118,4 +119,26 @@ func (s *AdminSyncStore) ListSyncActivity(ctx context.Context) ([]admin.SyncEntr
 		})
 	}
 	return entries, rows.Err()
+}
+
+// AdminEventStore implements handlers.SyncEventWriter on top of a raw *sql.DB
+// (the meta database).
+type AdminEventStore struct{ db *sql.DB }
+
+// NewAdminEventStore wraps a MetaDB for use in production wiring.
+func NewAdminEventStore(meta *MetaDB) *AdminEventStore {
+	return &AdminEventStore{db: meta.DB()}
+}
+
+// NewAdminEventStoreFromDB wraps a raw *sql.DB — used in tests.
+func NewAdminEventStoreFromDB(db *sql.DB) *AdminEventStore {
+	return &AdminEventStore{db: db}
+}
+
+func (s *AdminEventStore) WriteSyncEvent(ctx context.Context, appID, datasetID, userID, deviceKeyID string, opCount int) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO sync_events (app_id, dataset_id, user_id, device_key_id, op_count)
+		 VALUES (?,?,?,?,?)`,
+		appID, datasetID, userID, deviceKeyID, opCount)
+	return err
 }
