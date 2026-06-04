@@ -13,6 +13,7 @@ type AdminRouterDeps struct {
 	DeviceStore  DeviceAdminStore
 	DataStore    DataAdminStore
 	SyncStore    SyncAdminStore
+	MetricsReg   MetricsSource
 	Tmpl         *template.Template
 }
 
@@ -22,13 +23,16 @@ func NewAdminRouter(d AdminRouterDeps) http.Handler {
 	devices := NewDevicesHandler(d.DeviceStore, d.Tmpl)
 	data := NewDataHandler(d.DataStore, d.Tmpl)
 	misc := NewMiscHandlers(d.SyncStore, false, d.Tmpl)
+	metrics := NewMetricsHandler(d.MetricsReg, d.Tmpl)
 
 	mux.Handle("/admin/devices", devices)
 	mux.Handle("/admin/devices/", devices)
 	mux.Handle("/admin/data", data)
-	mux.Handle("/admin/data/", data)
+	mux.Handle("/admin/data/docs", data)
+	mux.Handle("/admin/data/doc", data)
 	mux.HandleFunc("/admin/sync", misc.SyncPage)
 	mux.HandleFunc("/admin/keys", misc.KeysPage)
+	mux.Handle("/admin/metrics", metrics)
 	mux.HandleFunc("/admin/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/devices", http.StatusFound)
 	})

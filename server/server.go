@@ -73,6 +73,7 @@ func Run(ctx context.Context, cfg *Config, log zerolog.Logger) error {
 		DeviceStore:  crsqlite.NewAdminDeviceStore(metaDB),
 		DataStore:    crsqlite.NewAdminDataStore(store),
 		SyncStore:    adminEventStore,
+		MetricsReg:   metricsReg,
 		Tmpl:         tmpl,
 	})
 

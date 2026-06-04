@@ -29,6 +29,7 @@ func TestAdminRouterRequiresAuth(t *testing.T) {
 		DeviceStore:  &stubDeviceStore{},
 		DataStore:    &stubDataStore{},
 		SyncStore:    &stubSyncStore{},
+		MetricsReg:   &stubMetrics{},
 	})
 	req := httptest.NewRequest("GET", "/admin/devices", nil)
 	rr := httptest.NewRecorder()
@@ -47,6 +48,7 @@ func TestAdminRouterWithAuth(t *testing.T) {
 		DeviceStore:  &stubDeviceStore{},
 		DataStore:    &stubDataStore{},
 		SyncStore:    &stubSyncStore{},
+		MetricsReg:   &stubMetrics{},
 	})
 	req := httptest.NewRequest("GET", "/admin/devices", nil)
 	req.SetBasicAuth("admin", "pass")
