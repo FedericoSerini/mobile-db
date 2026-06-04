@@ -50,16 +50,43 @@ func encodeMsg(t *testing.T, msg core.SyncMessage) []byte {
 
 func TestSyncHandlerWritesEvent(t *testing.T) {
 	writer := &stubEventWriter{}
-	h := handlers.NewSyncHandler(nil, nil, nil).WithEventWriter(writer)
+	store := core.NopStorage{}
+	engine := coresync.NewEngine(store, &nopNotifier{}, crdt.NewClock("server"), 1000)
+	h := handlers.NewSyncHandler(engine, cbor.NewCodec(), zstd.NewCompressor()).WithEventWriter(writer)
 	if h == nil {
 		t.Fatal("WithEventWriter must return the handler")
 	}
-	// Bad body → 400 before reaching engine, writer stays uncalled — just verifies compilation/wiring
-	req := httptest.NewRequest(http.MethodPost, "/sync", bytes.NewReader([]byte("bad")))
+
+	msg := core.SyncMessage{
+		AppID:     "app1",
+		UserID:    "user1",
+		DatasetID: "ds1",
+		Ops: []core.CRDTOp{
+			{
+				OpID:     "op-1",
+				DocID:    "doc-1",
+				Field:    "title",
+				Value:    "hello",
+				DeviceID: "device-1",
+			},
+		},
+	}
+	body := encodeMsg(t, msg)
+
+	req := httptest.NewRequest(http.MethodPost, "/sync", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/cbor+zstd")
+	ctx := context.WithValue(req.Context(), middleware.CtxAppID, "app1")
+	ctx = context.WithValue(ctx, middleware.CtxUserID, "user1")
+	req = req.WithContext(ctx)
+
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
-	if rr.Code == http.StatusOK && !writer.called {
-		t.Fatal("on successful sync, event writer must be called")
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body)
+	}
+	if !writer.called {
+		t.Fatal("on successful sync with ops, event writer must be called")
 	}
 }
 

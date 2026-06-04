@@ -44,7 +44,7 @@ func (h *SyncHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.compressor == nil {
-		http.Error(w, "no compressor configured", http.StatusBadRequest)
+		http.Error(w, "server misconfigured: nil compressor", http.StatusInternalServerError)
 		return
 	}
 	raw, err := h.compressor.Decompress(compressed)
