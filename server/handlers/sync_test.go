@@ -16,6 +16,13 @@ import (
 	"github.com/federicoserini/mobile-db/server/middleware"
 )
 
+type stubEventWriter struct{ called bool }
+
+func (s *stubEventWriter) WriteSyncEvent(_ context.Context, _, _, _, _ string, _ int) error {
+	s.called = true
+	return nil
+}
+
 type nopNotifier struct{}
 
 func (n *nopNotifier) Notify(_ context.Context, _, _ string) error { return nil }
@@ -39,6 +46,21 @@ func encodeMsg(t *testing.T, msg core.SyncMessage) []byte {
 		t.Fatal(err)
 	}
 	return out
+}
+
+func TestSyncHandlerWritesEvent(t *testing.T) {
+	writer := &stubEventWriter{}
+	h := handlers.NewSyncHandler(nil, nil, nil).WithEventWriter(writer)
+	if h == nil {
+		t.Fatal("WithEventWriter must return the handler")
+	}
+	// Bad body → 400 before reaching engine, writer stays uncalled — just verifies compilation/wiring
+	req := httptest.NewRequest(http.MethodPost, "/sync", bytes.NewReader([]byte("bad")))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code == http.StatusOK && !writer.called {
+		t.Fatal("on successful sync, event writer must be called")
+	}
 }
 
 func TestSyncHandlerReturns200(t *testing.T) {

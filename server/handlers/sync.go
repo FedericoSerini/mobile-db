@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"io"
 	"net/http"
 
@@ -9,14 +10,25 @@ import (
 	"github.com/federicoserini/mobile-db/server/middleware"
 )
 
+// SyncEventWriter is satisfied by crsqlite.AdminEventStore.
+type SyncEventWriter interface {
+	WriteSyncEvent(ctx context.Context, appID, datasetID, userID, deviceKeyID string, opCount int) error
+}
+
 type SyncHandler struct {
 	engine     *coresync.Engine
 	codec      core.Codec
 	compressor core.Compressor
+	events     SyncEventWriter // nil = no-op
 }
 
 func NewSyncHandler(engine *coresync.Engine, codec core.Codec, comp core.Compressor) *SyncHandler {
 	return &SyncHandler{engine: engine, codec: codec, compressor: comp}
+}
+
+func (h *SyncHandler) WithEventWriter(w SyncEventWriter) *SyncHandler {
+	h.events = w
+	return h
 }
 
 func (h *SyncHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -29,6 +41,10 @@ func (h *SyncHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	if err != nil {
 		http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if h.compressor == nil {
+		http.Error(w, "no compressor configured", http.StatusBadRequest)
 		return
 	}
 	raw, err := h.compressor.Decompress(compressed)
@@ -55,6 +71,12 @@ func (h *SyncHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "sync: "+err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	// Record sync event after successful merge (best-effort, never fail the request)
+	if h.events != nil && len(msg.Ops) > 0 {
+		dkID, _ := r.Context().Value(middleware.CtxDeviceKeyID).(string)
+		_ = h.events.WriteSyncEvent(r.Context(), msg.AppID, msg.DatasetID, msg.UserID, dkID, len(msg.Ops))
 	}
 
 	encoded, err := h.codec.Encode(resp)
