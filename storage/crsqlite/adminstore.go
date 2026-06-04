@@ -123,7 +123,9 @@ func (s *AdminDataStore) ListDocs(ctx context.Context, appID, datasetID, userID 
 	for rows.Next() {
 		var docID, uid, data, deviceID, createdAt string
 		var wallTime int64
-		rows.Scan(&docID, &uid, &data, &deviceID, &createdAt, &wallTime)
+		if err := rows.Scan(&docID, &uid, &data, &deviceID, &createdAt, &wallTime); err != nil {
+			return nil, err
+		}
 		docs = append(docs, map[string]any{
 			"doc_id":     docID,
 			"user_id":    uid,
