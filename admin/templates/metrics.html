@@ -1,0 +1,63 @@
+{{define "metrics"}}
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:2rem">
+
+  <div style="background:white;border-radius:8px;padding:1.25rem;box-shadow:0 1px 3px rgba(0,0,0,0.08);border-left:3px solid #3b82f6">
+    <div style="font-size:0.72rem;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em">Active Devices</div>
+    <div style="font-size:2rem;font-weight:700;color:#111;margin:0.35rem 0">{{.ActiveDevices}}</div>
+    <div style="font-size:0.72rem;color:#9ca3af">mobiledb_active_devices</div>
+  </div>
+
+  <div style="background:white;border-radius:8px;padding:1.25rem;box-shadow:0 1px 3px rgba(0,0,0,0.08);border-left:3px solid #10b981">
+    <div style="font-size:0.72rem;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em">CRDT Ops Total</div>
+    <div style="font-size:2rem;font-weight:700;color:#111;margin:0.35rem 0">{{.CRDTOpsTotal}}</div>
+    <div style="font-size:0.72rem;color:#9ca3af">mobiledb_crdt_ops_total</div>
+  </div>
+
+  <div style="background:white;border-radius:8px;padding:1.25rem;box-shadow:0 1px 3px rgba(0,0,0,0.08);border-left:3px solid #f59e0b">
+    <div style="font-size:0.72rem;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em">SSE Connections</div>
+    <div style="font-size:2rem;font-weight:700;color:#111;margin:0.35rem 0">{{.SSEConnections}}</div>
+    <div style="font-size:0.72rem;color:#9ca3af">mobiledb_sse_connections</div>
+  </div>
+
+  <div style="background:white;border-radius:8px;padding:1.25rem;box-shadow:0 1px 3px rgba(0,0,0,0.08);border-left:3px solid #8b5cf6">
+    <div style="font-size:0.72rem;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em">Compaction Runs</div>
+    <div style="font-size:2rem;font-weight:700;color:#111;margin:0.35rem 0">{{.CompactionRuns}}</div>
+    <div style="font-size:0.72rem;color:#9ca3af">mobiledb_compaction_runs_total</div>
+  </div>
+
+  <div style="background:white;border-radius:8px;padding:1.25rem;box-shadow:0 1px 3px rgba(0,0,0,0.08);border-left:3px solid #ef4444">
+    <div style="font-size:0.72rem;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em">Sync Requests</div>
+    <div style="font-size:2rem;font-weight:700;color:#111;margin:0.35rem 0">{{.SyncRequestsTotal}}</div>
+    <div style="font-size:0.72rem;color:#9ca3af">mobiledb_sync_requests_total (all apps)</div>
+  </div>
+
+  <div style="background:white;border-radius:8px;padding:1.25rem;box-shadow:0 1px 3px rgba(0,0,0,0.08);border-left:3px solid #06b6d4">
+    <div style="font-size:0.72rem;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em">DB Size</div>
+    <div style="font-size:2rem;font-weight:700;color:#111;margin:0.35rem 0">{{.DBSizeMB}} MB</div>
+    <div style="font-size:0.72rem;color:#9ca3af">mobiledb_db_size_bytes (sum)</div>
+  </div>
+
+</div>
+
+{{if .PerApp}}
+<h2 style="font-size:1rem;font-weight:600;color:#374151;margin-bottom:0.75rem">Per-app breakdown</h2>
+<table>
+  <thead>
+    <tr>
+      <th>App ID</th>
+      <th style="text-align:right">Sync Requests</th>
+      <th style="text-align:right">DB Size</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .PerApp}}
+    <tr>
+      <td>{{.AppID}}</td>
+      <td style="text-align:right">{{.Syncs}}</td>
+      <td style="text-align:right;color:#6b7280;font-size:0.875rem">{{.DBBytes}} B</td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
+{{end}}

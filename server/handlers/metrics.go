@@ -5,6 +5,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	dto "github.com/prometheus/client_model/go"
 )
 
 type MetricsRegistry struct {
@@ -58,4 +59,9 @@ func NewMetricsRegistry() *MetricsRegistry {
 
 func NewMetricsHandler(m *MetricsRegistry) http.Handler {
 	return promhttp.HandlerFor(m.reg, promhttp.HandlerOpts{})
+}
+
+// Gather exposes the internal registry for admin UI consumption.
+func (m *MetricsRegistry) Gather() ([]*dto.MetricFamily, error) {
+	return m.reg.Gather()
 }
