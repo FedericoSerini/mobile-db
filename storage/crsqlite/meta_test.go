@@ -2,12 +2,33 @@ package crsqlite_test
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
 
+	_ "github.com/mattn/go-sqlite3"
+
 	"github.com/federicoserini/mobile-db/storage/crsqlite"
 )
+
+func TestSyncEventsTableCreated(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := crsqlite.ApplyMetaDDL(context.Background(), db); err != nil {
+		t.Fatalf("ApplyMetaDDL: %v", err)
+	}
+	// table must exist
+	var name string
+	err = db.QueryRowContext(context.Background(),
+		`SELECT name FROM sqlite_master WHERE type='table' AND name='sync_events'`).Scan(&name)
+	if err != nil {
+		t.Fatalf("sync_events table not found: %v", err)
+	}
+}
 
 func openTestDB(t *testing.T) *crsqlite.Handle {
 	t.Helper()

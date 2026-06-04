@@ -6,7 +6,9 @@ import (
 	"fmt"
 )
 
-const metaSchema = `
+// ApplyMetaDDL creates all metadata tables. Idempotent.
+func ApplyMetaDDL(ctx context.Context, db *sql.DB) error {
+	const ddl = `
 CREATE TABLE IF NOT EXISTS device_keys (
     device_key_id  TEXT PRIMARY KEY,
     device_id      TEXT NOT NULL,
@@ -33,14 +35,28 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
     used       INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS sync_events (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    app_id        TEXT NOT NULL,
+    dataset_id    TEXT NOT NULL,
+    user_id       TEXT NOT NULL,
+    device_key_id TEXT NOT NULL,
+    op_count      INTEGER NOT NULL DEFAULT 0,
+    synced_at     DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_device_keys_app ON device_keys(app_id);
 CREATE INDEX IF NOT EXISTS idx_device_keys_device ON device_keys(device_id);
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(app_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_sync_events_app ON sync_events(app_id, synced_at DESC);
 `
+	_, err := db.ExecContext(ctx, ddl)
+	return err
+}
 
 // EnsureMeta creates the metadata table if it does not exist.
 func EnsureMeta(ctx context.Context, db *sql.DB) error {
-	if _, err := db.ExecContext(ctx, metaSchema); err != nil {
+	if err := ApplyMetaDDL(ctx, db); err != nil {
 		return fmt.Errorf("ensure meta table: %w", err)
 	}
 	return nil
