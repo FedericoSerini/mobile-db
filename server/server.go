@@ -54,7 +54,9 @@ func Run(ctx context.Context, cfg *Config, log zerolog.Logger) error {
 	comp := zstd.NewCompressor()
 
 	metricsReg := handlers.NewMetricsRegistry()
-	syncHandler := handlers.NewSyncHandler(engine, codec, comp)
+	adminEventStore := crsqlite.NewAdminEventStore(metaDB)
+	syncHandler := handlers.NewSyncHandler(engine, codec, comp).
+		WithEventWriter(adminEventStore)
 	healthHandler := handlers.NewHealthHandler("1.0.0").WithDBCheck(func() bool {
 		return store != nil
 	})
@@ -70,7 +72,7 @@ func Run(ctx context.Context, cfg *Config, log zerolog.Logger) error {
 		AllowedIPs:   cfg.AdminAllowedIPs,
 		DeviceStore:  crsqlite.NewAdminDeviceStore(metaDB),
 		DataStore:    crsqlite.NewAdminDataStore(store),
-		SyncStore:    crsqlite.NewAdminSyncStore(store),
+		SyncStore:    adminEventStore,
 		Tmpl:         tmpl,
 	})
 

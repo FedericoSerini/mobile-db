@@ -167,34 +167,6 @@ func (s *AdminDataStore) DeleteDoc(ctx context.Context, datasetID, userID, docID
 	return err
 }
 
-// AdminSyncStore implements admin.SyncAdminStore on top of Backend.
-type AdminSyncStore struct{ b *Backend }
-
-func NewAdminSyncStore(b *Backend) *AdminSyncStore { return &AdminSyncStore{b: b} }
-
-func (s *AdminSyncStore) ListSyncActivity(ctx context.Context) ([]admin.SyncEntry, error) {
-	rows, err := s.b.DB().QueryContext(ctx,
-		`SELECT app_id, dataset_id FROM datasets ORDER BY app_id, dataset_id`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var entries []admin.SyncEntry
-	for rows.Next() {
-		var appID, datasetID string
-		rows.Scan(&appID, &datasetID)
-		// Use empty userID to get aggregate count across all users for this dataset.
-		count, _ := s.b.OpCount(ctx, appID, "", datasetID)
-		entries = append(entries, admin.SyncEntry{
-			AppID:     appID,
-			DatasetID: datasetID,
-			OpCount:   count,
-			LastSync:  time.Now(),
-		})
-	}
-	return entries, rows.Err()
-}
-
 // AdminEventStore implements handlers.SyncEventWriter on top of a raw *sql.DB
 // (the meta database).
 type AdminEventStore struct{ db *sql.DB }
@@ -215,4 +187,76 @@ func (s *AdminEventStore) WriteSyncEvent(ctx context.Context, appID, datasetID, 
 		 VALUES (?,?,?,?,?)`,
 		appID, datasetID, userID, deviceKeyID, opCount)
 	return err
+}
+
+func (s *AdminEventStore) ListSyncEvents(ctx context.Context, appID string, page, pageSize int) ([]admin.SyncEvent, int, error) {
+	if page < 1 {
+		page = 1
+	}
+	offset := (page - 1) * pageSize
+
+	var total int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM sync_events WHERE (?='' OR app_id=?)`, appID, appID).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, app_id, dataset_id, user_id, device_key_id, op_count, synced_at
+		 FROM sync_events
+		 WHERE (?='' OR app_id=?)
+		 ORDER BY synced_at DESC
+		 LIMIT ? OFFSET ?`,
+		appID, appID, pageSize, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var events []admin.SyncEvent
+	for rows.Next() {
+		var e admin.SyncEvent
+		var syncedAt string
+		if err := rows.Scan(&e.ID, &e.AppID, &e.DatasetID, &e.UserID, &e.DeviceKeyID, &e.OpCount, &syncedAt); err != nil {
+			return nil, 0, err
+		}
+		e.SyncedAt, _ = time.Parse("2006-01-02T15:04:05Z", syncedAt)
+		if e.SyncedAt.IsZero() {
+			e.SyncedAt, _ = time.Parse("2006-01-02 15:04:05", syncedAt)
+		}
+		events = append(events, e)
+	}
+	return events, total, rows.Err()
+}
+
+func (s *AdminEventStore) ListSyncAggregates(ctx context.Context) ([]admin.SyncAggregate, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT
+			app_id,
+			dataset_id,
+			COALESCE(SUM(op_count), 0) AS total_ops,
+			COUNT(CASE WHEN synced_at >= datetime('now', '-1 day') THEN 1 END) AS syncs_24h,
+			MAX(synced_at) AS last_sync
+		FROM sync_events
+		GROUP BY app_id, dataset_id
+		ORDER BY last_sync DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var aggs []admin.SyncAggregate
+	for rows.Next() {
+		var a admin.SyncAggregate
+		var lastSync string
+		if err := rows.Scan(&a.AppID, &a.DatasetID, &a.TotalOps, &a.Syncs24h, &lastSync); err != nil {
+			return nil, err
+		}
+		a.LastSync, _ = time.Parse("2006-01-02T15:04:05Z", lastSync)
+		if a.LastSync.IsZero() {
+			a.LastSync, _ = time.Parse("2006-01-02 15:04:05", lastSync)
+		}
+		aggs = append(aggs, a)
+	}
+	return aggs, rows.Err()
 }

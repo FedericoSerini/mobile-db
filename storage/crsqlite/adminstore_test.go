@@ -86,6 +86,67 @@ func TestWriteSyncEvent(t *testing.T) {
 	}
 }
 
+func seedSyncEvents(t *testing.T, db *sql.DB) {
+	t.Helper()
+	for _, row := range []struct{ app, ds, user, dkey string; ops int }{
+		{"app1", "notes", "u1", "dk1", 5},
+		{"app1", "notes", "u2", "dk2", 3},
+		{"app1", "settings", "u1", "dk1", 1},
+	} {
+		db.ExecContext(context.Background(),
+			`INSERT INTO sync_events (app_id, dataset_id, user_id, device_key_id, op_count)
+			 VALUES (?,?,?,?,?)`, row.app, row.ds, row.user, row.dkey, row.ops)
+	}
+}
+
+func TestListSyncEventsPaginated(t *testing.T) {
+	db := openMetaDB(t)
+	defer db.Close()
+	seedSyncEvents(t, db)
+
+	store := crsqlite.NewAdminEventStoreFromDB(db)
+
+	events, total, err := store.ListSyncEvents(context.Background(), "", 1, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 3 {
+		t.Fatalf("want total=3, got %d", total)
+	}
+	if len(events) != 2 {
+		t.Fatalf("want 2 on page 1, got %d", len(events))
+	}
+
+	events2, _, _ := store.ListSyncEvents(context.Background(), "", 2, 2)
+	if len(events2) != 1 {
+		t.Fatalf("want 1 on page 2, got %d", len(events2))
+	}
+}
+
+func TestListSyncAggregates(t *testing.T) {
+	db := openMetaDB(t)
+	defer db.Close()
+	seedSyncEvents(t, db)
+
+	store := crsqlite.NewAdminEventStoreFromDB(db)
+	aggs, err := store.ListSyncAggregates(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(aggs) != 2 {
+		t.Fatalf("want 2 aggregates, got %d", len(aggs))
+	}
+	for _, a := range aggs {
+		if a.AppID == "app1" && a.DatasetID == "notes" {
+			if a.TotalOps != 8 {
+				t.Errorf("notes: want TotalOps=8, got %d", a.TotalOps)
+			}
+			return
+		}
+	}
+	t.Error("notes aggregate not found")
+}
+
 func openSnapDB(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := sql.Open("sqlite3", ":memory:")

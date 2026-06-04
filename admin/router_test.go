@@ -12,7 +12,11 @@ import (
 
 type stubSyncStore struct{}
 
-func (s *stubSyncStore) ListSyncActivity(_ context.Context) ([]admin.SyncEntry, error) {
+func (s *stubSyncStore) ListSyncEvents(_ context.Context, _ string, _, _ int) ([]admin.SyncEvent, int, error) {
+	return nil, 0, nil
+}
+
+func (s *stubSyncStore) ListSyncAggregates(_ context.Context) ([]admin.SyncAggregate, error) {
 	return nil, nil
 }
 

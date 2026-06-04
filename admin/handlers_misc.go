@@ -8,15 +8,27 @@ import (
 	"time"
 )
 
-type SyncEntry struct {
+type SyncEvent struct {
+	ID          int64
+	AppID       string
+	DatasetID   string
+	UserID      string
+	DeviceKeyID string
+	OpCount     int
+	SyncedAt    time.Time
+}
+
+type SyncAggregate struct {
 	AppID     string
 	DatasetID string
-	OpCount   int
+	TotalOps  int
+	Syncs24h  int
 	LastSync  time.Time
 }
 
 type SyncAdminStore interface {
-	ListSyncActivity(ctx context.Context) ([]SyncEntry, error)
+	ListSyncEvents(ctx context.Context, appID string, page, pageSize int) ([]SyncEvent, int, error)
+	ListSyncAggregates(ctx context.Context) ([]SyncAggregate, error)
 }
 
 type MiscHandlers struct {
@@ -30,13 +42,13 @@ func NewMiscHandlers(syncStore SyncAdminStore, keyBackupStale bool, tmpl *templa
 }
 
 func (h *MiscHandlers) SyncPage(w http.ResponseWriter, r *http.Request) {
-	entries, err := h.syncStore.ListSyncActivity(r.Context())
+	aggregates, err := h.syncStore.ListSyncAggregates(r.Context())
 	if err != nil {
 		http.Error(w, "failed to list sync activity: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	var content strings.Builder
-	if err := h.tmpl.ExecuteTemplate(&content, "sync", map[string]any{"Entries": entries}); err != nil {
+	if err := h.tmpl.ExecuteTemplate(&content, "sync", map[string]any{"Aggregates": aggregates}); err != nil {
 		http.Error(w, "template error: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
