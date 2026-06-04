@@ -4,6 +4,7 @@ import (
 	"context"
 	"html/template"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -41,14 +42,58 @@ func NewMiscHandlers(syncStore SyncAdminStore, keyBackupStale bool, tmpl *templa
 	return &MiscHandlers{syncStore: syncStore, keyBackupStale: keyBackupStale, tmpl: tmpl}
 }
 
+const syncPageSize = 25
+
 func (h *MiscHandlers) SyncPage(w http.ResponseWriter, r *http.Request) {
-	aggregates, err := h.syncStore.ListSyncAggregates(r.Context())
-	if err != nil {
-		http.Error(w, "failed to list sync activity: "+err.Error(), http.StatusInternalServerError)
-		return
+	tab := r.URL.Query().Get("tab")
+	if tab == "" {
+		tab = "events"
 	}
+
+	var data map[string]any
+
+	switch tab {
+	case "aggregates":
+		aggs, err := h.syncStore.ListSyncAggregates(r.Context())
+		if err != nil {
+			http.Error(w, "failed to load aggregates: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		data = map[string]any{"Tab": "aggregates", "Aggregates": aggs}
+
+	default: // "events"
+		pageStr := r.URL.Query().Get("page")
+		page := 1
+		if n, err := strconv.Atoi(pageStr); err == nil && n > 1 {
+			page = n
+		}
+		events, total, err := h.syncStore.ListSyncEvents(r.Context(), "", page, syncPageSize)
+		if err != nil {
+			http.Error(w, "failed to load sync events: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		from := (page-1)*syncPageSize + 1
+		to := from + len(events) - 1
+		if len(events) == 0 {
+			from = 0
+		}
+		data = map[string]any{
+			"Tab":      "events",
+			"Events":   events,
+			"Total":    total,
+			"Page":     page,
+			"PageSize": syncPageSize,
+			"From":     from,
+			"To":       to,
+			"HasPrev":  page > 1,
+			"HasNext":  to < total,
+			"PrevPage": page - 1,
+			"NextPage": page + 1,
+		}
+	}
+
 	var content strings.Builder
-	if err := h.tmpl.ExecuteTemplate(&content, "sync", map[string]any{"Aggregates": aggregates}); err != nil {
+	if err := h.tmpl.ExecuteTemplate(&content, "sync", data); err != nil {
 		http.Error(w, "template error: "+err.Error(), http.StatusInternalServerError)
 		return
 	}

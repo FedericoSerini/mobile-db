@@ -1,15 +1,88 @@
 {{define "sync"}}
+{{$tab := .Tab}}
+<div style="display:flex;gap:0;margin-bottom:1.5rem;border-bottom:2px solid #dee2e6">
+  <a href="/admin/sync?tab=events"
+     style="padding:0.5rem 1.25rem;text-decoration:none;font-size:0.875rem;font-weight:600;
+            {{if eq $tab "events"}}color:#3b82f6;border-bottom:2px solid #3b82f6;margin-bottom:-2px;{{else}}color:#6b7280;{{end}}">
+    Event Log
+  </a>
+  <a href="/admin/sync?tab=aggregates"
+     style="padding:0.5rem 1.25rem;text-decoration:none;font-size:0.875rem;font-weight:600;
+            {{if eq $tab "aggregates"}}color:#3b82f6;border-bottom:2px solid #3b82f6;margin-bottom:-2px;{{else}}color:#6b7280;{{end}}">
+    Aggregates
+  </a>
+</div>
+
+{{if eq $tab "events"}}
 <table>
-  <thead><tr><th>App ID</th><th>Dataset ID</th><th>Op Count</th><th>Last Sync</th></tr></thead>
-  <tbody>
-    {{range .Entries}}
+  <thead>
     <tr>
-      <td>{{.AppID}}</td><td>{{.DatasetID}}</td><td>{{.OpCount}}</td>
-      <td>{{.LastSync.Format "2006-01-02 15:04:05"}}</td>
+      <th>Time</th>
+      <th>App</th>
+      <th>Dataset</th>
+      <th>User</th>
+      <th>Device Key</th>
+      <th style="text-align:right">Ops</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Events}}
+    <tr>
+      <td style="white-space:nowrap;color:#6b7280;font-size:0.85rem">{{.SyncedAt.Format "2006-01-02 15:04:05"}}</td>
+      <td>{{.AppID}}</td>
+      <td>{{.DatasetID}}</td>
+      <td style="color:#6b7280;font-size:0.85rem">{{.UserID}}</td>
+      <td style="color:#6b7280;font-size:0.85rem"><code style="font-size:0.78rem;color:#1e40af;background:#eff6ff;padding:0.1rem 0.3rem;border-radius:3px">{{.DeviceKeyID}}</code></td>
+      <td style="text-align:right">{{.OpCount}}</td>
     </tr>
     {{else}}
-    <tr><td colspan="4">No sync activity.</td></tr>
+    <tr><td colspan="6" style="color:#6b7280;text-align:center;padding:2rem">No sync events yet.</td></tr>
     {{end}}
   </tbody>
 </table>
+
+{{if gt .Total 0}}
+<div style="display:flex;align-items:center;justify-content:space-between;margin-top:1rem;font-size:0.82rem;color:#6b7280">
+  <span>Showing {{.From}}&#x2013;{{.To}} of {{.Total}}</span>
+  <div style="display:flex;gap:0.4rem">
+    {{if .HasPrev}}
+    <a href="/admin/sync?tab=events&page={{.PrevPage}}" class="btn btn-primary" style="font-size:0.8rem;padding:0.3rem 0.7rem;text-decoration:none">&#x2190; Prev</a>
+    {{else}}
+    <button disabled style="padding:0.3rem 0.7rem;border:1px solid #d1d5db;border-radius:4px;background:#f9f9f9;color:#9ca3af;font-size:0.8rem;cursor:default">&#x2190; Prev</button>
+    {{end}}
+    {{if .HasNext}}
+    <a href="/admin/sync?tab=events&page={{.NextPage}}" class="btn btn-primary" style="font-size:0.8rem;padding:0.3rem 0.7rem;text-decoration:none">Next &#x2192;</a>
+    {{else}}
+    <button disabled style="padding:0.3rem 0.7rem;border:1px solid #d1d5db;border-radius:4px;background:#f9f9f9;color:#9ca3af;font-size:0.8rem;cursor:default">Next &#x2192;</button>
+    {{end}}
+  </div>
+</div>
+{{end}}
+
+{{else}}
+<table>
+  <thead>
+    <tr>
+      <th>App</th>
+      <th>Dataset</th>
+      <th style="text-align:right">Total Ops</th>
+      <th style="text-align:right">Syncs (24h)</th>
+      <th>Last Sync</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Aggregates}}
+    <tr>
+      <td>{{.AppID}}</td>
+      <td>{{.DatasetID}}</td>
+      <td style="text-align:right">{{.TotalOps}}</td>
+      <td style="text-align:right">{{.Syncs24h}}</td>
+      <td style="color:#6b7280;font-size:0.85rem">{{.LastSync.Format "2006-01-02 15:04"}}</td>
+    </tr>
+    {{else}}
+    <tr><td colspan="5" style="color:#6b7280;text-align:center;padding:2rem">No sync activity yet.</td></tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
 {{end}}
