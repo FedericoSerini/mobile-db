@@ -16,8 +16,30 @@ type stubDeviceStore struct {
 	devices []auth.DeviceKey
 }
 
-func (s *stubDeviceStore) ListDevices(_ context.Context, _ string) ([]auth.DeviceKey, error) {
-	return s.devices, nil
+func (s *stubDeviceStore) ListDevices(_ context.Context, status string) ([]auth.DeviceKey, error) {
+	if status == "" {
+		return s.devices, nil
+	}
+	var out []auth.DeviceKey
+	for _, d := range s.devices {
+		if d.Status == status {
+			out = append(out, d)
+		}
+	}
+	return out, nil
+}
+
+func (s *stubDeviceStore) DeviceCounts(_ context.Context) (all, active, revoked int, err error) {
+	for _, d := range s.devices {
+		all++
+		switch d.Status {
+		case "active":
+			active++
+		case "revoked":
+			revoked++
+		}
+	}
+	return all, active, revoked, nil
 }
 
 func (s *stubDeviceStore) RevokeDevice(_ context.Context, id string) error {

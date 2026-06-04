@@ -9,19 +9,27 @@ import (
 	"github.com/federicoserini/mobile-db/server/auth"
 )
 
-// AdminDeviceStore implements admin.DeviceAdminStore on top of MetaDB.
-type AdminDeviceStore struct{ db *MetaDB }
+// AdminDeviceStore implements admin.DeviceAdminStore on top of a raw *sql.DB.
+type AdminDeviceStore struct {
+	db *sql.DB
+}
 
-func NewAdminDeviceStore(db *MetaDB) *AdminDeviceStore { return &AdminDeviceStore{db: db} }
+func NewAdminDeviceStore(meta *MetaDB) *AdminDeviceStore {
+	return &AdminDeviceStore{db: meta.DB()}
+}
 
-func (s *AdminDeviceStore) ListDevices(ctx context.Context, appID string) ([]auth.DeviceKey, error) {
-	q := `SELECT device_key_id, device_id, app_id, key_hash, status, registered_at FROM device_keys`
-	args := []any{}
-	if appID != "" {
-		q += ` WHERE app_id=?`
-		args = append(args, appID)
-	}
-	rows, err := s.db.DB().QueryContext(ctx, q, args...)
+// NewAdminDeviceStoreFromDB wraps a raw *sql.DB — used in tests.
+func NewAdminDeviceStoreFromDB(db *sql.DB) *AdminDeviceStore {
+	return &AdminDeviceStore{db: db}
+}
+
+// ListDevices returns device keys, optionally filtered by status ("active", "revoked", or "" for all).
+func (s *AdminDeviceStore) ListDevices(ctx context.Context, status string) ([]auth.DeviceKey, error) {
+	q := `SELECT device_key_id, device_id, app_id, key_hash, status, registered_at
+	      FROM device_keys
+	      WHERE (?='' OR status=?)
+	      ORDER BY registered_at DESC`
+	rows, err := s.db.QueryContext(ctx, q, status, status)
 	if err != nil {
 		return nil, err
 	}
@@ -35,8 +43,31 @@ func (s *AdminDeviceStore) ListDevices(ctx context.Context, appID string) ([]aut
 	return devices, rows.Err()
 }
 
+// DeviceCounts returns total, active, and revoked device counts in one query.
+func (s *AdminDeviceStore) DeviceCounts(ctx context.Context) (all, active, revoked int, err error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT status, COUNT(*) FROM device_keys GROUP BY status`)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var status string
+		var count int
+		rows.Scan(&status, &count)
+		all += count
+		switch status {
+		case "active":
+			active = count
+		case "revoked":
+			revoked = count
+		}
+	}
+	return all, active, revoked, rows.Err()
+}
+
 func (s *AdminDeviceStore) RevokeDevice(ctx context.Context, deviceKeyID string) error {
-	res, err := s.db.DB().ExecContext(ctx,
+	res, err := s.db.ExecContext(ctx,
 		`UPDATE device_keys SET status='revoked' WHERE device_key_id=?`, deviceKeyID)
 	if err != nil {
 		return err

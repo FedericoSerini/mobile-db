@@ -10,7 +10,8 @@ import (
 )
 
 type DeviceAdminStore interface {
-	ListDevices(ctx context.Context, appID string) ([]auth.DeviceKey, error)
+	ListDevices(ctx context.Context, status string) ([]auth.DeviceKey, error)
+	DeviceCounts(ctx context.Context) (all, active, revoked int, err error)
 	RevokeDevice(ctx context.Context, deviceKeyID string) error
 }
 
