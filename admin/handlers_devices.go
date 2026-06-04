@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"html"
 	"html/template"
 	"net/http"
 	"strings"
@@ -37,6 +38,10 @@ func (h *devicesHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (h *devicesHandler) list(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status") // "", "active", "revoked"
+	if status != "" && status != "active" && status != "revoked" {
+		http.Error(w, "invalid status", http.StatusBadRequest)
+		return
+	}
 
 	devices, err := h.store.ListDevices(r.Context(), status)
 	if err != nil {
@@ -87,7 +92,7 @@ func (h *devicesHandler) revoke(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`<tr style="opacity:0.5">
-		<td><code>` + deviceKeyID + `</code></td>
+		<td><code>` + html.EscapeString(deviceKeyID) + `</code></td>
 		<td colspan="4" style="color:#6b7280">—</td>
 		<td><span class="badge badge-revoked">revoked</span></td>
 	</tr>`))
